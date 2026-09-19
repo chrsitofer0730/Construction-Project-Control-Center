@@ -1,0 +1,2081 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Construction VA — Project Control Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.7.0/mammoth.browser.min.js"></script>
+<style>
+:root{
+  --ink:#221F1F; --ink-soft:#4a4746; --paper:#FFFFFF; --canvas:#F6F5F3;
+  --line:#E4E1DC; --grey:#888888; --orange:#F58220; --yellow:#FFC72C;
+  --ok:#2E8B57; --warn:#C0392B; --card:#FFFFFF;
+  --radius:10px;
+}
+:root:not([data-theme="light"]) {
+  @media (prefers-color-scheme: dark){
+    --ink:#F2EFEA; --ink-soft:#C9C4BC; --paper:#211E1B; --canvas:#171513;
+    --line:#3A352F; --grey:#9A948B; --card:#26221E;
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#F2EFEA; --ink-soft:#C9C4BC; --paper:#211E1B; --canvas:#171513;
+  --line:#3A352F; --grey:#9A948B; --card:#26221E;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--canvas);color:var(--ink);font-family:'Inter',sans-serif;font-size:14px;}
+h1,h2,h3,h4{font-family:'Space Grotesk',sans-serif;margin:0 0 6px;letter-spacing:-0.01em;}
+button{font-family:inherit;cursor:pointer;}
+a{color:var(--orange);}
+.app{display:flex;min-height:100vh;}
+.sidebar{width:220px;flex:0 0 220px;background:var(--ink);color:#EDE9E3;padding:20px 14px;position:sticky;top:0;height:100vh;overflow-y:auto;}
+.brand{display:flex;align-items:center;gap:8px;margin-bottom:22px;padding:0 6px;}
+.brand-mark{width:30px;height:30px;border-radius:7px;background:linear-gradient(135deg,var(--orange),var(--yellow));flex:0 0 30px;}
+.brand-text{font-family:'Space Grotesk';font-weight:700;font-size:14.5px;line-height:1.2;}
+.brand-text span{display:block;font-family:'Inter';font-weight:400;font-size:10.5px;color:#B8B2A8;}
+.nav-group{margin-bottom:14px;}
+.nav-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#8C8578;padding:6px 10px 2px;}
+.nav-btn{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:transparent;border:none;color:#D9D4CB;padding:8px 10px;border-radius:8px;font-size:13px;margin-bottom:2px;}
+.nav-btn:hover{background:#332F2B;}
+.nav-btn.active{background:var(--orange);color:#1B1815;font-weight:600;}
+.proj-picker{background:#2C2823;border-radius:8px;padding:9px 10px;margin-bottom:16px;}
+.proj-picker select{width:100%;background:transparent;color:#F2EFEA;border:none;font-size:12.5px;font-weight:600;}
+.proj-picker select option{color:#111;}
+.main{flex:1;padding:26px 34px;max-width:1180px;}
+.pagehead{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:20px;flex-wrap:wrap;gap:10px;}
+.pagehead p{color:var(--ink-soft);margin:4px 0 0;font-size:13px;}
+.btn{border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;border:1px solid var(--line);background:var(--paper);color:var(--ink);}
+.btn.primary{background:var(--orange);border-color:var(--orange);color:#221100;}
+.btn.ghost{background:transparent;}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;}
+.grid{display:grid;gap:14px;}
+.grid.stats{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;}
+.stat{display:flex;flex-direction:column;gap:2px;}
+.stat .num{font-family:'Space Grotesk';font-size:26px;font-weight:700;}
+.stat .lbl{font-size:11.5px;color:var(--ink-soft);}
+.stat.warn .num{color:var(--warn);}
+.section-title{font-size:15px;margin:26px 0 10px;font-weight:600;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);padding:8px 10px;border-bottom:1px solid var(--line);}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;}
+tr:hover td{background:rgba(245,130,32,0.04);}
+.badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;}
+.badge.pending{background:#FFF1D6;color:#8A5A00;}
+.badge.approved,.badge.paid,.badge.delivered,.badge.closed{background:#DEF3E4;color:#1B6B3C;}
+.badge.overdue,.badge.rejected{background:#FBE0DC;color:#A5301F;}
+.badge.review{background:#E4E9FB;color:#2E4EA5;}
+.badge.superseded{background:#EDEBE7;color:#6b665e;}
+:root[data-theme="dark"] .badge.pending,:root:not([data-theme=light]){ }
+.empty{padding:40px 20px;text-align:center;color:var(--ink-soft);border:1.5px dashed var(--line);border-radius:var(--radius);}
+.empty h3{color:var(--ink);margin-bottom:6px;}
+.modal-bg{position:fixed;inset:0;background:rgba(20,17,14,.5);display:flex;align-items:flex-start;justify-content:center;padding:5vh 16px;overflow-y:auto;z-index:50;}
+.modal{background:var(--paper);border-radius:14px;max-width:640px;width:100%;padding:24px 26px;margin-bottom:5vh;}
+.modal h2{margin-bottom:2px;}
+.field{margin-bottom:12px;}
+.field label{display:block;font-size:12px;font-weight:600;margin-bottom:4px;color:var(--ink-soft);}
+.field input,.field select,.field textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:7px;background:var(--canvas);color:var(--ink);font-family:inherit;font-size:13px;}
+.field textarea{min-height:70px;resize:vertical;}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.dropzone{border:2px dashed var(--line);border-radius:12px;padding:30px 20px;text-align:center;color:var(--ink-soft);margin-bottom:16px;transition:border-color .15s;}
+.dropzone.drag{border-color:var(--orange);color:var(--orange);}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px;flex-wrap:wrap;}
+.tab{padding:9px 14px;font-size:12.5px;font-weight:600;color:var(--ink-soft);border-bottom:2px solid transparent;background:none;border-top:none;border-left:none;border-right:none;}
+.tab.active{color:var(--orange);border-bottom-color:var(--orange);}
+.activity-item{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:12.5px;}
+.activity-item .dot{width:7px;height:7px;border-radius:50%;background:var(--orange);margin-top:5px;flex:0 0 7px;}
+.activity-item .t{color:var(--grey);font-size:11px;}
+.ai-box{background:linear-gradient(135deg,#2A2622,#1B1815);color:#F2EFEA;border-radius:12px;padding:18px 20px;margin-bottom:18px;}
+.ai-box h3{color:#FFC72C;}
+.ai-suggest{background:#FDF3E4;border:1px solid var(--yellow);border-radius:10px;padding:14px 16px;margin-bottom:16px;}
+.ai-suggest h4{color:#8A5A00;margin-bottom:8px;font-size:13px;}
+.kv{display:grid;grid-template-columns:120px 1fr;gap:4px 10px;font-size:12.5px;margin-bottom:3px;}
+.kv b{color:var(--ink-soft);font-weight:600;}
+.chat-log{max-height:340px;overflow-y:auto;margin-bottom:12px;}
+.chat-msg{padding:10px 13px;border-radius:10px;margin-bottom:8px;font-size:13px;max-width:85%;}
+.chat-msg.user{background:var(--orange);color:#221100;margin-left:auto;}
+.chat-msg.ai{background:var(--card);border:1px solid var(--line);}
+.spinner{display:inline-block;width:13px;height:13px;border:2px solid var(--line);border-top-color:var(--orange);border-radius:50%;animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.muted{color:var(--ink-soft);font-size:12.5px;}
+.toast{position:fixed;bottom:20px;right:20px;background:var(--ink);color:#F2EFEA;padding:11px 18px;border-radius:9px;font-size:13px;z-index:100;box-shadow:0 6px 20px rgba(0,0,0,.2);}
+.icon-x{background:none;border:none;color:var(--ink-soft);font-size:18px;line-height:1;padding:2px 6px;}
+.demo-flag{background:var(--yellow);color:#5A3D00;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;margin-left:8px;}
+.limits-note{font-size:11.5px;color:var(--ink-soft);border-top:1px dashed var(--line);margin-top:10px;padding-top:10px;}
+::-webkit-scrollbar{width:9px;height:9px;}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px;}
+.overflow-x{overflow-x:auto;}
+.lock-bar{display:flex;align-items:center;justify-content:space-between;gap:6px;background:#2C2823;border-radius:8px;padding:8px 10px;margin-bottom:12px;font-size:11.5px;color:#D9D4CB;}
+.lock-bar.is-unlocked{background:#233A2C;}
+.lock-bar .lock-status{font-weight:600;}
+.lock-bar .lock-btn{padding:4px 10px;font-size:11.5px;border-radius:6px;background:transparent;border:1px solid #55504A;color:#EDE9E3;}
+td.editable-cell{cursor:pointer;position:relative;}
+td.editable-cell:hover{background:rgba(245,130,32,0.09);outline:1px dashed var(--orange);outline-offset:-2px;}
+td.editing{background:rgba(245,130,32,0.06);padding:5px 6px;}
+td.editing input, td.editing select{width:100%;padding:6px 8px;border:1.5px solid var(--orange);border-radius:6px;background:var(--paper);color:var(--ink);font-family:inherit;font-size:13px;}
+td.locked-cell{cursor:default;}
+.row-actions{display:flex;gap:4px;white-space:nowrap;}
+.row-actions .btn{padding:4px 8px;font-size:12px;}
+.row-actions .btn.danger{color:var(--warn);border-color:var(--warn);}
+.security-note{font-size:11.5px;color:var(--ink-soft);background:var(--canvas);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:10px;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+/* ============================================================
+   CONSTRUCTION VA PROJECT CONTROL CENTER
+   Real persistence via `db`, real files via `assets`,
+   real AI classification/summaries via `sample`, real
+   downloads via `downloads`. See in-app "Settings > About
+   this build" for what still needs external services.
+   ============================================================ */
+
+const STATUS_META = {
+  submitted:'pending', pending:'pending', 'under review':'review', 'revise & resubmit':'overdue',
+  'revise and resubmit':'overdue', approved:'approved', rejected:'overdue', open:'pending',
+  answered:'review', closed:'closed', overdue:'overdue', delivered:'delivered', delayed:'overdue',
+  paid:'paid', current:'approved', superseded:'superseded', 'pending approval':'pending', draft:'pending',
+  'not submitted':'pending', 'approved as noted':'approved', resubmitted:'review',
+  'pending response':'pending',
+};
+function badge(status){
+  const s=(status||'').toLowerCase();
+  const cls = STATUS_META[s] || 'pending';
+  return `<span class="badge ${cls}">${status||'—'}</span>`;
+}
+
+// ---------- discipline constants (Material Submittal / Shop Drawing Submittal / RFI) ----------
+const DISCIPLINES = ['Structural','Architectural','Mechanical','Electrical','Plumbing'];
+const DISCIPLINE_CODE = {S:'Structural',A:'Architectural',M:'Mechanical',E:'Electrical',P:'Plumbing'};
+function disciplineFromText(text){
+  if(!text) return null;
+  const t = text.toUpperCase();
+  // e.g. MS-M-024, SD-A-015 Rev 02, RFI-S-008
+  const m = t.match(/\b(?:MS|SD|RFI)-([SAMEP])-?\d*/);
+  if(m && DISCIPLINE_CODE[m[1]]) return DISCIPLINE_CODE[m[1]];
+  for(const d of DISCIPLINES){ if(t.includes(d.toUpperCase())) return d; }
+  return null;
+}
+function distinctVals(docs, key){ return [...new Set(docs.map(d=>d[key]).filter(Boolean))].sort(); }
+function esc(s){ return (s??'').toString().replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function uid(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4); }
+function fmtDate(d){ if(!d) return '—'; try{ return new Date(d).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});}catch(e){return d;} }
+function daysUntil(d){ if(!d) return null; const diff = (new Date(d) - new Date()); return Math.ceil(diff/86400000); }
+function toast(msg){
+  let t=document.getElementById('toast'); if(t) t.remove();
+  t=document.createElement('div'); t.id='toast'; t.className='toast'; t.textContent=msg;
+  document.body.appendChild(t); setTimeout(()=>t.remove(),3200);
+}
+
+// ---------- edit-lock: password hashing (client-side only — see Settings > Security for limitations) ----------
+async function sha256Hex(text){
+  const enc = new TextEncoder().encode(text);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+function randomHex(len){
+  const arr = new Uint8Array(len); crypto.getRandomValues(arr);
+  return Array.from(arr).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function hashPassword(pw, salt){ return sha256Hex('cvpc::'+salt+'::'+pw); }
+
+// Call before any mutating action. Returns true if editing is already unlocked;
+// otherwise opens the unlock (or first-time set-password) modal and returns false.
+function requireUnlock(){
+  if(State.unlocked) return true;
+  State.modal = { type: State.security ? 'unlock' : 'setPassword' };
+  render();
+  return false;
+}
+function lockApp(){
+  State.unlocked = false;
+  State.editingCell = null;
+  State.modal = null;
+  toast('Editing locked');
+  render();
+}
+
+// ---------- capability handles ----------
+// Standalone build: data persistence runs on localStorage in this browser.
+// AI classification/summaries and cloud asset upload are not available outside
+// the Claude artifact viewer, so those two stay null — the app already falls
+// back gracefully wherever they're used (manual classification, plain <a download>).
+let dbApi=null, assetsApi=null, sampleApi=null, downloadsApi=null;
+
+function makeLocalDb(){
+  const KEY = 'cva_local_db_v1';
+  function readAll(){ try{ return JSON.parse(localStorage.getItem(KEY)) || {}; }catch(e){ return {}; } }
+  function writeAll(all){ try{ localStorage.setItem(KEY, JSON.stringify(all)); }catch(e){ console.warn('localStorage save failed', e); } }
+  return {
+    collection(name){
+      return {
+        async get(){
+          const coll = readAll()[name] || {};
+          return Object.keys(coll).map(id => ({ id, data: coll[id] }));
+        },
+        doc(id){
+          return {
+            async get(){
+              const coll = readAll()[name] || {};
+              return coll[id] !== undefined ? { id, data: coll[id] } : null;
+            },
+            async set(data){
+              const all = readAll();
+              all[name] = all[name] || {};
+              all[name][id] = data;
+              writeAll(all);
+            },
+            async delete(){
+              const all = readAll();
+              if(all[name]) delete all[name][id];
+              writeAll(all);
+            }
+          };
+        }
+      };
+    }
+  };
+}
+
+async function initCaps(){
+  dbApi = makeLocalDb();
+}
+
+// ---------- in-memory cache mirrors of db collections ----------
+const State = {
+  projects: [], documents: [], tasks: [], activity: [],
+  activeProjectId: null, route:'dashboard', loading:true, demoMode:false,
+  moduleFilters: { materialsubmittal:{discipline:'ALL',search:''}, shopdrawing:{discipline:'ALL',search:''}, rfi:{discipline:'ALL',search:''} },
+  dashboardDiscipline: 'ALL',
+  // ---- editing security & inline cell editing ----
+  unlocked:false,       // true once the correct password has been entered this session
+  security:null,        // {hash,salt,updatedAt} loaded from db (settings/security); null = no password set yet
+  editingCell:null,      // {docId, field} — which single cell is currently in edit mode
+};
+
+const DEMO_ID = 'demo-project';
+
+function buildDemoData(){
+  const now = Date.now();
+  const iso = (daysAgo)=> new Date(now - daysAgo*86400000).toISOString();
+  const isoFuture = (daysAhead)=> new Date(now + daysAhead*86400000).toISOString();
+  State.projects = [{
+    id: DEMO_ID, name:'Dubai Residential Tower — Demo', number:'DEMO-001', client:'Demo Client LLC',
+    mainContractor:'Demo Contracting Co.', consultant:'Demo Consultants', pm:'A. Demo', siteEngineer:'B. Demo',
+    architect:'C. Demo Architects', docController:'You', location:'Dubai, UAE', startDate:iso(120),
+    targetDate:isoFuture(240), status:'Active', description:'Sample project so you can see how the system behaves before creating your own.',
+    createdAt:iso(120)
+  }];
+  State.documents = [
+    {id:uid(),projectId:DEMO_ID,type:'RFI',number:'RFI-S-024',discipline:'Structural',subject:'Waterproofing Termination Detail',date:iso(3),relatedDrawing:'A-102 Rev 03',submittedBy:'Subcontractor',reviewer:'Consultant',priority:'Medium',question:'Clarification requested on the waterproofing termination detail at the basement wall.',status:'Pending Response',summary:'Subcontractor requests clarification on the waterproofing termination detail at the basement wall, referencing drawing A-102 Rev 03.',fileName:'RFI-S-024 Waterproofing.pdf',revision:null,dueDate:isoFuture(4),createdAt:iso(3)},
+    {id:uid(),projectId:DEMO_ID,type:'RFI',number:'RFI-M-009',discipline:'Mechanical',subject:'AHU Duct Routing Clash',date:iso(2),submittedBy:'MEP Subcontractor',reviewer:'MEP Consultant',priority:'High',question:'Requesting resolution of a ductwork clash with a structural beam at Level 3.',status:'Under Review',summary:'MEP subcontractor flags a ductwork/structural clash at Level 3 requiring consultant direction.',fileName:'RFI-M-009 Duct Clash.pdf',revision:null,dueDate:isoFuture(2),createdAt:iso(2)},
+    {id:uid(),projectId:DEMO_ID,type:'Material Submittal',number:'MS-A-018',discipline:'Architectural',specSection:'09 30 00',materialCategory:'Flooring',subject:'Ceramic Floor Tile — Living Areas',manufacturer:'RAK Ceramics',supplier:'Al Futtaim Building Products',date:iso(6),relatedDrawing:'A-201',submittedBy:'Main Contractor',reviewer:'Consultant',status:'Under Review',summary:'Submittal for ceramic floor tile finish in living areas, pending consultant review.',fileName:'MS-A-018 Floor Tile.pdf',revision:'Rev 00',dueDate:isoFuture(1),createdAt:iso(6)},
+    {id:uid(),projectId:DEMO_ID,type:'Material Submittal',number:'MS-E-031',discipline:'Electrical',specSection:'26 05 00',materialCategory:'Cabling',subject:'LV Power Cable',manufacturer:'Ducab',supplier:'Ducab Trading',date:iso(4),submittedBy:'Electrical Subcontractor',reviewer:'Consultant',status:'Approved as Noted',summary:'LV power cable submittal approved with minor comments on cable tray routing.',fileName:'MS-E-031 LV Cable.pdf',revision:'Rev 01',previousRevision:'Rev 00',dueDate:null,createdAt:iso(4)},
+    {id:uid(),projectId:DEMO_ID,type:'Shop Drawing Submittal',number:'SD-A-101',discipline:'Architectural',drawingType:'Layout',subject:'Ground Floor Plan',date:iso(10),submittedBy:'Architect',reviewer:'Consultant',status:'Current',summary:'Revised ground floor plan, Rev 01, supersedes Rev 00.',fileName:'SD-A-101 Rev01.pdf',revision:'Rev 01',previousRevision:'Rev 00',dueDate:null,createdAt:iso(10)},
+    {id:uid(),projectId:DEMO_ID,type:'Shop Drawing Submittal',number:'SD-A-101',discipline:'Architectural',drawingType:'Layout',subject:'Ground Floor Plan',date:iso(40),submittedBy:'Architect',status:'Superseded',summary:'Original ground floor plan, Rev 00 — superseded by Rev 01.',fileName:'SD-A-101 Rev00.pdf',revision:'Rev 00',dueDate:null,createdAt:iso(40)},
+    {id:uid(),projectId:DEMO_ID,type:'Shop Drawing Submittal',number:'SD-P-007',discipline:'Plumbing',drawingType:'Riser Diagram',subject:'Domestic Water Riser',date:iso(12),submittedBy:'Plumbing Subcontractor',reviewer:'Consultant',status:'Under Review',summary:'Domestic water riser diagram submitted for consultant review.',fileName:'SD-P-007 Riser.pdf',revision:'Rev 00',dueDate:isoFuture(3),createdAt:iso(12)},
+    {id:uid(),projectId:DEMO_ID,type:'Purchase Order',number:'PO-2026-014',subject:'Structural Steel Supply',date:iso(15),relatedDrawing:null,submittedBy:'Procurement',status:'Delayed',summary:'PO issued for structural steel; supplier reports a delivery delay.',fileName:'PO-2026-014.pdf',revision:null,dueDate:isoFuture(2),createdAt:iso(15)},
+    {id:uid(),projectId:DEMO_ID,type:'Invoice',number:'INV-104',subject:'Interior Fit-Out — Progress Claim 3',date:iso(8),relatedDrawing:null,submittedBy:'Subcontractor',status:'Approved',summary:'Progress claim 3 for interior fit-out works, approved for payment.',fileName:'INV-104.pdf',revision:null,dueDate:null,createdAt:iso(8)},
+  ];
+  State.tasks = [
+    {id:uid(),projectId:DEMO_ID,title:'Follow up RFI-024 response',responsible:'Consultant',dueDate:isoFuture(4),status:'Open',source:'RFI-024',createdAt:iso(3)},
+    {id:uid(),projectId:DEMO_ID,title:'Review SUB-018 before deadline',responsible:'You',dueDate:isoFuture(1),status:'Open',source:'SUB-018',createdAt:iso(6)},
+    {id:uid(),projectId:DEMO_ID,title:'Chase supplier on delayed steel PO-2026-014',responsible:'Procurement',dueDate:isoFuture(2),status:'Open',source:'PO-2026-014',createdAt:iso(15)},
+  ];
+  State.activity = [
+    {id:uid(),projectId:DEMO_ID,timestamp:iso(3),message:'RFI-024 added — Waterproofing Termination Detail. AI classified as RFI, confirmed by user.'},
+    {id:uid(),projectId:DEMO_ID,timestamp:iso(6),message:'SUB-018 added — Ceramic Floor Tile submittal registered.'},
+    {id:uid(),projectId:DEMO_ID,timestamp:iso(10),message:'Drawing A-101 Rev 01 uploaded — Rev 00 automatically marked Superseded.'},
+    {id:uid(),projectId:DEMO_ID,timestamp:iso(15),message:'PO-2026-014 registered — Procurement register updated.'},
+    {id:uid(),projectId:DEMO_ID,timestamp:iso(8),message:'INV-104 approved and logged to Invoice register.'},
+  ];
+}
+
+// ---------- db persistence helpers ----------
+async function loadAll(){
+  State.loading = true; render();
+  if(dbApi){
+    try{
+      const [p,d,t,a] = await Promise.all([
+        dbApi.collection('projects').get(),
+        dbApi.collection('documents').get(),
+        dbApi.collection('tasks').get(),
+        dbApi.collection('activity').get(),
+      ]);
+      State.projects = (p||[]).map(x=>x.data ? {...x.data,id:x.id} : x);
+      State.documents = (d||[]).map(x=>x.data ? {...x.data,id:x.id} : x);
+      State.tasks = (t||[]).map(x=>x.data ? {...x.data,id:x.id} : x);
+      State.activity = (a||[]).map(x=>x.data ? {...x.data,id:x.id} : x);
+    }catch(e){ console.warn('db load failed, falling back to demo-only view', e); }
+    try{
+      const secSnap = await dbApi.collection('settings').doc('security').get();
+      const secData = secSnap ? (typeof secSnap.data==='function' ? secSnap.data() : secSnap.data) : null;
+      if(secData && secData.hash && secData.salt) State.security = secData;
+    }catch(e){ /* no password set yet, or db unavailable — stays locked-but-unset */ }
+  }
+  if(State.projects.filter(p=>p.id!==DEMO_ID).length===0 && State.projects.length===0){
+    buildDemoData();
+    State.demoMode = true;
+  } else if(!State.projects.find(p=>p.id===DEMO_ID)){
+    // keep user's real projects, still offer demo alongside if none exists elsewhere is unnecessary
+  }
+  if(!State.activeProjectId){
+    const real = State.projects.find(p=>p.id!==DEMO_ID);
+    State.activeProjectId = real ? real.id : (State.projects[0]?.id || null);
+  }
+  State.loading = false;
+  render();
+}
+
+async function persist(collection, id, data){
+  if(dbApi){
+    try{ await dbApi.collection(collection).doc(id).set(data); return true; }
+    catch(e){ console.warn('persist failed', collection, e); toast('Could not save — check connection'); return false; }
+  }
+  return false;
+}
+async function removeDoc(collection,id){
+  if(dbApi){ try{ await dbApi.collection(collection).doc(id).delete(); }catch(e){} }
+}
+
+async function logActivity(projectId, message){
+  const item = {id:uid(), projectId, timestamp:new Date().toISOString(), message};
+  State.activity.unshift(item);
+  await persist('activity', item.id, {projectId,timestamp:item.timestamp,message});
+}
+
+// ---------- derived getters ----------
+function activeProject(){ return State.projects.find(p=>p.id===State.activeProjectId); }
+function projDocs(){ return State.documents.filter(d=>d.projectId===State.activeProjectId).sort((a,b)=> new Date(b.date||b.createdAt) - new Date(a.date||a.createdAt)); }
+function projTasks(){ return State.tasks.filter(t=>t.projectId===State.activeProjectId); }
+function projActivity(){ return State.activity.filter(a=>a.projectId===State.activeProjectId).sort((a,b)=> new Date(b.timestamp)-new Date(a.timestamp)); }
+function byType(type){ return projDocs().filter(d=>d.type===type); }
+
+function computeStats(discipline){
+  let docs = projDocs();
+  if(discipline && discipline!=='ALL') docs = docs.filter(d=>d.discipline===discipline);
+  const now = Date.now();
+  const isOverdue = d => d.dueDate && new Date(d.dueDate).getTime() < now && !['closed','approved','paid','delivered','current','approved as noted','answered'].includes((d.status||'').toLowerCase());
+  const weekAgo = now - 7*86400000;
+  return {
+    docsTotal: docs.length,
+    docsWeek: docs.filter(d=> new Date(d.createdAt||d.date).getTime() > weekAgo).length,
+    drawings: docs.filter(d=>d.type==='Shop Drawing Submittal'||d.type==='Drawing Revision'||d.type==='Drawing'),
+    submittals: docs.filter(d=>d.type==='Material Submittal'),
+    rfis: docs.filter(d=>d.type==='RFI'),
+    procurement: docs.filter(d=>['Purchase Order','LPO','Quotation'].includes(d.type)),
+    invoices: docs.filter(d=>d.type==='Invoice'),
+    tasksOpen: projTasks().filter(t=>t.status!=='Done'),
+    overdueDocs: docs.filter(isOverdue),
+  };
+}
+
+// discipline breakdown for a list of docs -> {Structural:n,...,Total:n}
+function disciplineBreakdown(docs){
+  const out = {}; let total = 0;
+  DISCIPLINES.forEach(d=>{ const n = docs.filter(x=>x.discipline===d).length; out[d]=n; total+=n; });
+  out.Total = total;
+  out.Unassigned = docs.filter(x=>!x.discipline).length;
+  return out;
+}
+
+// ================= AI helpers =================
+async function extractTextFromFile(file){
+  const name = file.name.toLowerCase();
+  try{
+    if(name.endsWith('.txt') || name.endsWith('.csv')){
+      return await file.text();
+    }
+    if(name.endsWith('.pdf')){
+      const buf = await file.arrayBuffer();
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+      let text='';
+      const pages = Math.min(pdf.numPages, 8);
+      for(let i=1;i<=pages;i++){
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        text += content.items.map(it=>it.str).join(' ') + '\n';
+      }
+      return text.trim() || '(No extractable text — this PDF may be a scanned image. OCR is not available in this environment.)';
+    }
+    if(name.endsWith('.docx')){
+      const buf = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({arrayBuffer:buf});
+      return result.value;
+    }
+    if(name.endsWith('.xlsx') || name.endsWith('.xls')){
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, {type:'array'});
+      let text='';
+      wb.SheetNames.forEach(sn=>{
+        const sheet = wb.Sheets[sn];
+        text += `--- Sheet: ${sn} ---\n` + XLSX.utils.sheet_to_csv(sheet) + '\n';
+      });
+      return text.slice(0, 8000);
+    }
+    if(name.match(/\.(jpg|jpeg|png)$/)){
+      return '(Image file — no text extracted. Image OCR is not available in this environment; classification will rely on the file name only.)';
+    }
+    if(name.endsWith('.pptx')){
+      return '(PPTX text extraction is not wired up in this build — classification will rely on the file name only.)';
+    }
+  }catch(e){
+    console.warn('extract failed', e);
+    return '(Could not extract text from this file: ' + e.message + ')';
+  }
+  return '';
+}
+
+const DOC_TYPES = ['Material Submittal','Shop Drawing Submittal','RFI','Transmittal','Purchase Order','LPO','Quotation','Invoice','Delivery Note','Inspection Request','Meeting Minutes','Daily Report','Weekly Report','Method Statement','Material Approval','Test Report','NCR','Correspondence','Contract Document','Specification','Other'];
+
+// Filename-only heuristic used when the AI (sample) capability is unavailable, so
+// uploads are never blocked outright — discipline/number/revision are inferred from
+// naming patterns like "MS-M-024 Rev 01", "SD-A-015 Rev 02", "RFI-S-008".
+function classifyByFilename(fileName){
+  const base = fileName.replace(/\.[a-z0-9]+$/i,'');
+  const discipline = disciplineFromText(base);
+  let type = 'Other';
+  if(/^MS-/i.test(base) || /material submittal/i.test(base)) type = 'Material Submittal';
+  else if(/^SD-/i.test(base) || /shop drawing/i.test(base)) type = 'Shop Drawing Submittal';
+  else if(/^RFI-/i.test(base) || /^RFI/i.test(base)) type = 'RFI';
+  const numberMatch = base.match(/^([A-Z]+-[A-Z]-?\d+)/i);
+  const revMatch = base.match(/rev\.?\s*(\d+)/i);
+  return {
+    type, discipline,
+    number: numberMatch ? numberMatch[1].toUpperCase() : null,
+    subject: base, date: null, relatedDrawing: null, submittedBy: null,
+    status: type==='Other' ? 'Submitted' : 'Submitted',
+    dueDate: null, revision: revMatch ? 'Rev '+revMatch[1].padStart(2,'0') : null,
+    summary: 'AI classification unavailable — fields inferred from the file name only. Please review and correct before confirming.',
+  };
+}
+
+async function classifyDocument(fileName, text){
+  if(!sampleApi) return classifyByFilename(fileName);
+  const prompt = `You are a construction document-control assistant for a UAE construction project. Classify the uploaded document and extract key fields.
+File name: "${fileName}"
+Extracted text (may be partial or empty):
+"""
+${(text||'').slice(0,6000)}
+"""
+Allowed document types: ${DOC_TYPES.join(', ')}.
+Allowed disciplines: Structural, Architectural, Mechanical, Electrical, Plumbing (choose the closest one if the document clearly belongs to a discipline, else null).
+Respond ONLY with minified JSON, no markdown fences, no preamble, matching exactly this shape:
+{"type":"<one of allowed types>","discipline":"<one of allowed disciplines, else null>","number":"<document/submittal/drawing/RFI number if found, else null>","subject":"<short subject/title — material description for a Material Submittal, drawing title for a Shop Drawing Submittal, RFI subject for an RFI>","date":"<ISO date submitted/issued if found, else null>","relatedDrawing":"<drawing number referenced, else null>","submittedBy":"<person/company if found, else null>","status":"<a reasonable initial status like Submitted / Under Review, else null>","dueDate":"<ISO review/response deadline if mentioned, else null>","revision":"<revision label like 'Rev 01', else null>","specSection":"<specification section if this is a Material Submittal, else null>","materialCategory":"<material category if this is a Material Submittal, else null>","manufacturer":"<manufacturer if mentioned, else null>","supplier":"<supplier if mentioned, else null>","subcontractor":"<subcontractor if mentioned, else null>","contractor":"<main contractor if mentioned, else null>","reviewer":"<consultant/reviewer if mentioned, else null>","drawingType":"<drawing type if this is a Shop Drawing Submittal, else null>","location":"<location/area if mentioned, else null>","relatedSpecification":"<related specification section/number, else null>","relatedMaterialSubmittal":"<related Material Submittal number, else null>","relatedShopDrawing":"<related Shop Drawing Submittal number, else null>","priority":"<RFI priority like Low/Medium/High, else null>","question":"<the RFI question/clarification requested, else null>","summary":"<2-3 sentence factual summary based only on the text given>"}`;
+  try{
+    const res = await sampleApi(prompt, {modelTier:'default'});
+    let raw = res.text.trim().replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
+    const parsed = JSON.parse(raw);
+    if(!parsed.discipline) parsed.discipline = disciplineFromText(fileName) || disciplineFromText(parsed.number);
+    return parsed;
+  }catch(e){
+    console.warn('classification failed', e);
+    return classifyByFilename(fileName);
+  }
+}
+
+async function askAssistant(question){
+  if(!sampleApi) return 'The AI assistant needs the AI capability, which is not available right now.';
+  const proj = activeProject();
+  const docs = projDocs();
+  const tasks = projTasks();
+  const dataSnapshot = {
+    project: proj ? {name:proj.name, number:proj.number, status:proj.status} : null,
+    documents: docs.map(d=>({type:d.type,discipline:d.discipline,number:d.number,subject:d.subject,status:d.status,dueDate:d.dueDate,date:d.date,revision:d.revision,relatedDrawing:d.relatedDrawing})),
+    tasks: tasks.map(t=>({title:t.title,responsible:t.responsible,dueDate:t.dueDate,status:t.status})),
+  };
+  const prompt = `You are the AI assistant inside a construction document-control application. Answer the user's question using ONLY the project data JSON below — never invent documents, numbers or dates that are not present. If the data doesn't contain the answer, say so plainly.
+PROJECT DATA:
+${JSON.stringify(dataSnapshot)}
+
+USER QUESTION: "${question}"
+
+Answer conversationally in a few sentences or a short list. If the user asks you to draft an email, write a complete professional email (Subject + Body) but clearly label it as a DRAFT the user must review before sending.`;
+  try{
+    const res = await sampleApi(prompt, {modelTier:'default'});
+    return res.text;
+  }catch(e){
+    return 'Sorry, the AI assistant call failed: ' + e.message;
+  }
+}
+
+// ================= RENDER =================
+function render(){
+  const root = document.getElementById('root');
+  if(State.loading){ root.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:var(--ink-soft);"><span class="spinner" style="margin-right:8px;"></span> Loading your control center…</div>`; return; }
+  root.innerHTML = `
+    <div class="app">
+      ${renderSidebar()}
+      <div class="main">${renderRoute()}</div>
+    </div>
+    ${State.modal ? renderModal() : ''}
+  `;
+  attachHandlers();
+}
+
+function renderSidebar(){
+  const proj = activeProject();
+  const nav = [
+    {group:'Overview', items:[['dashboard','Dashboard'],['projects','Projects']]},
+    {group:'Document Intelligence', items:[['upload','Upload & Classify'],['documents','All Documents'],['submittals','Material Submittal'],['drawings','Shop Drawing Submittal'],['rfis','RFI'],['procurement','Procurement'],['invoices','Invoices']]},
+    {group:'Operations', items:[['tasks','Tasks'],['daily','Daily Update'],['weekly','Weekly Summary'],['email','Email Center'],['activity','Activity Log']]},
+    {group:'Tools', items:[['search','Search'],['assistant','AI Assistant'],['export','Export / Backup'],['settings','Settings']]},
+  ];
+  return `
+  <div class="sidebar">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div class="brand-text">Construction VA<span>Project Control Center</span></div>
+    </div>
+    <div class="lock-bar ${State.unlocked?'is-unlocked':''}">
+      <span class="lock-status">${State.unlocked?'🔓 Editing unlocked':'🔒 Locked (view only)'}</span>
+      <button class="btn ghost lock-btn" id="${State.unlocked?'lockBtn':'unlockBtn'}">${State.unlocked?'Lock':'Unlock'}</button>
+    </div>
+    <div class="proj-picker">
+      <select id="projectSelect">
+        ${State.projects.map(p=>`<option value="${p.id}" ${p.id===State.activeProjectId?'selected':''}>${esc(p.name)}${p.id===DEMO_ID?' (Demo)':''}</option>`).join('')}
+      </select>
+    </div>
+    ${nav.map(g=>`
+      <div class="nav-group">
+        <div class="nav-label">${g.group}</div>
+        ${g.items.map(([r,label])=>`<button class="nav-btn ${State.route===r?'active':''}" data-route="${r}">${label}</button>`).join('')}
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+function pageHead(title, sub, actions){
+  return `<div class="pagehead"><div><h1>${title}</h1>${sub?`<p>${sub}</p>`:''}</div><div class="btn-row">${actions||''}</div></div>`;
+}
+
+function renderRoute(){
+  if(!activeProject() && State.route!=='projects') {
+    return pageHead('No project selected','Create your first project to get started.') +
+      `<div class="empty"><h3>Nothing here yet</h3><p>Create a project to start tracking documents, registers and tasks.</p>
+      <button class="btn primary" id="createFirstProject" style="margin-top:12px;">+ New Project</button></div>`;
+  }
+  switch(State.route){
+    case 'dashboard': return renderDashboard();
+    case 'projects': return renderProjects();
+    case 'upload': return renderUpload();
+    case 'documents': return renderRegister(null, 'All Documents', 'Every document uploaded across this project.');
+    case 'drawings': return renderDisciplineModule('shopdrawing');
+    case 'submittals': return renderDisciplineModule('materialsubmittal');
+    case 'rfis': return renderDisciplineModule('rfi');
+    case 'procurement': return renderRegister(['Purchase Order','LPO','Quotation'], 'Procurement Register', 'RFQs, quotations, LPOs and purchase orders.');
+    case 'invoices': return renderRegister('Invoice', 'Invoice Register', 'Invoices received, under approval, and paid.');
+    case 'tasks': return renderTasks();
+    case 'daily': return renderDaily();
+    case 'weekly': return renderWeekly();
+    case 'email': return renderEmail();
+    case 'activity': return renderActivity();
+    case 'search': return renderSearch();
+    case 'assistant': return renderAssistant();
+    case 'export': return renderExport();
+    case 'settings': return renderSettings();
+    default: return renderDashboard();
+  }
+}
+
+function disciplineBreakdownCard(title, docs){
+  const b = disciplineBreakdown(docs);
+  return `<div class="card">
+    <h4 style="margin-bottom:10px;">${esc(title)}</h4>
+    <div class="grid stats" style="grid-template-columns:repeat(auto-fit,minmax(110px,1fr));">
+      ${DISCIPLINES.map(d=>`<div class="stat"><div class="num" style="font-size:20px;">${b[d]}</div><div class="lbl">${d}</div></div>`).join('')}
+      <div class="stat"><div class="num" style="font-size:20px;">${b.Total}</div><div class="lbl"><b>Total</b></div></div>
+    </div>
+  </div>`;
+}
+
+function renderDashboard(){
+  const proj = activeProject();
+  const disc = State.dashboardDiscipline || 'ALL';
+  const s = computeStats(disc);
+  const recentAct = projActivity().slice(0,6);
+  return pageHead(proj.name, `${proj.number || ''} ${proj.status?('· '+proj.status):''}${proj.id===DEMO_ID?'<span class="demo-flag">DEMO PROJECT</span>':''}`,
+    `<button class="btn primary" data-route="upload">+ Upload Document</button>`) +
+  `<div class="field" style="max-width:220px;margin-bottom:14px;"><label>Discipline</label>
+    <select id="dashDisciplineFilter">
+      <option value="ALL" ${disc==='ALL'?'selected':''}>ALL</option>
+      ${DISCIPLINES.map(d=>`<option value="${d}" ${disc===d?'selected':''}>${d.toUpperCase()}</option>`).join('')}
+    </select>
+  </div>
+  <div class="grid stats">
+    <div class="card stat"><div class="num">${s.docsTotal}</div><div class="lbl">Total documents</div></div>
+    <div class="card stat"><div class="num">${s.docsWeek}</div><div class="lbl">Documents this week</div></div>
+    <div class="card stat ${s.overdueDocs.length?'warn':''}"><div class="num">${s.overdueDocs.length}</div><div class="lbl">Overdue items</div></div>
+    <div class="card stat"><div class="num">${s.rfis.length}</div><div class="lbl">RFIs</div></div>
+    <div class="card stat"><div class="num">${s.submittals.length}</div><div class="lbl">Material Submittals</div></div>
+    <div class="card stat"><div class="num">${s.drawings.length}</div><div class="lbl">Shop Drawing Submittals</div></div>
+    <div class="card stat"><div class="num">${s.procurement.length}</div><div class="lbl">Procurement items</div></div>
+    <div class="card stat"><div class="num">${s.invoices.length}</div><div class="lbl">Invoices</div></div>
+    <div class="card stat"><div class="num">${s.tasksOpen.length}</div><div class="lbl">Open tasks</div></div>
+  </div>
+  ${disc==='ALL' ? `
+  <div class="section-title">Discipline breakdown</div>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));">
+    ${disciplineBreakdownCard('Material Submittals', byType('Material Submittal'))}
+    ${disciplineBreakdownCard('Shop Drawing Submittals', projDocs().filter(d=>d.type==='Shop Drawing Submittal'||d.type==='Drawing Revision'))}
+    ${disciplineBreakdownCard('RFIs', byType('RFI'))}
+  </div>` : ''}
+  <div class="section-title">Recent activity</div>
+  <div class="card">
+    ${recentAct.length ? recentAct.map(a=>`<div class="activity-item"><div class="dot"></div><div><div>${esc(a.message)}</div><div class="t">${fmtDate(a.timestamp)} · ${new Date(a.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div></div></div>`).join('')
+      : `<p class="muted">No activity yet — upload a document to get started.</p>`}
+  </div>`;
+}
+
+function renderProjects(){
+  return pageHead('Projects', 'Each project keeps its own documents, registers, tasks and activity — nothing crosses over between them.',
+    `<button class="btn primary" id="newProjectBtn">+ New Project</button>`) +
+  `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr));">
+    ${State.projects.map(p=>`
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <h3 style="margin-bottom:2px;">${esc(p.name)}${p.id===DEMO_ID?'<span class="demo-flag">DEMO</span>':''}</h3>
+        </div>
+        <div class="muted">${esc(p.number||'')} ${p.client?('· '+esc(p.client)):''}</div>
+        <div style="margin:10px 0;">${badge(p.status||'Active')}</div>
+        <div class="muted">${esc(p.location||'')}</div>
+        <div class="btn-row" style="margin-top:12px;">
+          <button class="btn" data-open-project="${p.id}">Open</button>
+          <button class="btn ghost" data-edit-project="${p.id}">Edit</button>
+        </div>
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+function renderUpload(){
+  return pageHead('Upload & Classify', 'Upload a document — the AI reads it, proposes a type and key fields, and waits for your confirmation before anything is saved.') +
+  `<div class="dropzone" id="dropzone">
+    <div style="font-size:28px;margin-bottom:8px;">⬆</div>
+    <div><b>Drag a file here, or</b> <button class="btn primary" id="browseBtn" style="margin-left:6px;">Browse files</button></div>
+    <div class="muted" style="margin-top:8px;">PDF · DOCX · XLSX · CSV · TXT · JPG · PNG</div>
+    <input type="file" id="fileInput" style="display:none" multiple>
+  </div>
+  <div id="uploadStatus"></div>
+  <div class="section-title">Recently uploaded</div>
+  ${projDocs().slice(0,8).length ? renderDocTable(projDocs().slice(0,8)) : `<div class="empty"><h3>No documents yet</h3><p>Upload your first file above.</p></div>`}
+  `;
+}
+
+// =============== inline cell editing / add / duplicate / delete (shared by every register) ===============
+// Every editable table (Material Submittal, Shop Drawing Submittal, RFI, Procurement, Invoices) is backed
+// by the same State.documents array and the same 'documents' db collection, so one set of helpers covers all five.
+function blankDocFor(type, extra){
+  return Object.assign({
+    id: uid(), projectId: State.activeProjectId, type,
+    number:'', subject:'', discipline:'', status:'Not Submitted',
+    date: new Date().toISOString(), dueDate:null, revision:'',
+    submittedBy:'', reviewer:'', summary:'', fileName:'', createdAt:new Date().toISOString(),
+  }, extra||{});
+}
+
+async function addNewDocRow(type, extra){
+  if(!requireUnlock()) return;
+  const doc = blankDocFor(type, extra);
+  State.documents.push(doc);
+  await persist('documents', doc.id, doc);
+  await logActivity(State.activeProjectId, `${type} — new blank row added manually.`);
+  toast('Row added — click a cell to fill it in');
+  render();
+}
+
+async function duplicateDocRow(id){
+  if(!requireUnlock()) return;
+  const src = State.documents.find(x=>x.id===id);
+  if(!src) return;
+  const copy = {...src, id: uid(), number: src.number ? src.number+' (Copy)' : '', createdAt: new Date().toISOString()};
+  State.documents.push(copy);
+  await persist('documents', copy.id, copy);
+  toast('Row duplicated');
+  render();
+}
+
+function askDeleteDocRow(id){
+  if(!requireUnlock()) return;
+  const d = State.documents.find(x=>x.id===id);
+  State.modal = {type:'confirmDelete', docId:id, label: d ? (d.number||d.subject||d.type) : 'This record'};
+  render();
+}
+
+async function performDeleteDoc(id){
+  State.documents = State.documents.filter(x=>x.id!==id);
+  await removeDoc('documents', id);
+}
+
+function startCellEdit(docId, field){
+  if(!requireUnlock()) return;
+  State.editingCell = {docId, field};
+  render();
+}
+function cancelCellEdit(){
+  if(!State.editingCell) return;
+  State.editingCell = null;
+  render();
+}
+async function commitCellEdit(docId, field, rawValue){
+  const doc = State.documents.find(x=>x.id===docId);
+  State.editingCell = null;
+  if(!doc){ render(); return; }
+  const cleared = (field==='dueDate') ? (rawValue || null) : (rawValue || '');
+  if((doc[field]||'') === (cleared||'')){ render(); return; }
+  doc[field] = cleared;
+  render();
+  const ok = await persist('documents', docId, {...doc});
+  if(ok) toast('Saved');
+}
+
+// Renders one <td> — a static value normally, or (when unlocked and this exact cell is
+// mid-edit) an input/select — for a single document field. kind: 'text' | 'date' | 'select'.
+function renderEditableCell(doc, field, kind, opts){
+  opts = opts || {};
+  const editing = State.editingCell && State.editingCell.docId===doc.id && State.editingCell.field===field;
+  const locked = !State.unlocked;
+  if(editing){
+    if(kind==='select'){
+      const options = opts.options || [];
+      return `<td class="editing"><select data-cell-input data-doc-id="${doc.id}" data-field="${field}" autofocus>
+        <option value="">—</option>
+        ${options.map(o=>`<option value="${esc(o)}" ${((doc[field]||'')===o)?'selected':''}>${esc(o)}</option>`).join('')}
+      </select></td>`;
+    }
+    if(kind==='date'){
+      return `<td class="editing"><input type="date" data-cell-input data-doc-id="${doc.id}" data-field="${field}" value="${(doc[field]||'').toString().slice(0,10)}" autofocus></td>`;
+    }
+    return `<td class="editing"><input type="text" data-cell-input data-doc-id="${doc.id}" data-field="${field}" value="${esc(doc[field]||'')}" autofocus></td>`;
+  }
+  let display;
+  if(field==='status') display = badge(doc[field]);
+  else if(kind==='date') display = doc[field] ? fmtDate(doc[field]) : '—';
+  else display = esc(doc[field]||'—');
+  if(opts.bold) display = `<b>${display}</b>`;
+  if(locked) return `<td class="locked-cell">${display}</td>`;
+  return `<td class="editable-cell" data-edit-cell="${doc.id}" data-edit-field="${field}">${display}</td>`;
+}
+
+function rowActionsCell(doc){
+  const locked = !State.unlocked;
+  return `<td class="row-actions">
+    <button class="btn ghost" data-view-doc="${doc.id}">View</button>
+    ${locked ? '' : `<button class="btn ghost" data-duplicate-doc="${doc.id}">Dup</button><button class="btn ghost danger" data-delete-doc="${doc.id}">Delete</button>`}
+  </td>`;
+}
+
+function renderDocTable(docs, showRevisionCol, editable, statusOptions){
+  if(!editable){
+    return `<div class="card overflow-x"><table><thead><tr>
+      <th>Number</th><th>Type</th><th>Subject</th>${showRevisionCol?'<th>Revision</th>':''}<th>Date</th><th>Status</th><th>Due</th><th></th>
+    </tr></thead><tbody>
+    ${docs.map(d=>`<tr>
+      <td><b>${esc(d.number||'—')}</b></td>
+      <td>${esc(d.type)}</td>
+      <td>${esc(d.subject||'')}</td>
+      ${showRevisionCol?`<td>${esc(d.revision||'—')}</td>`:''}
+      <td>${fmtDate(d.date)}</td>
+      <td>${badge(d.status)}</td>
+      <td>${d.dueDate?fmtDate(d.dueDate):'—'}</td>
+      <td><button class="btn ghost" data-view-doc="${d.id}" style="padding:4px 10px;">View</button></td>
+    </tr>`).join('')}
+    </tbody></table></div>`;
+  }
+  return `<div class="card overflow-x"><table><thead><tr>
+    <th>Number</th><th>Type</th><th>Subject</th>${showRevisionCol?'<th>Revision</th>':''}<th>Date</th><th>Status</th><th>Due</th><th></th>
+  </tr></thead><tbody>
+  ${docs.map(d=>`<tr>
+    ${renderEditableCell(d,'number','text',{bold:true})}
+    <td>${esc(d.type)}</td>
+    ${renderEditableCell(d,'subject','text',{})}
+    ${showRevisionCol?renderEditableCell(d,'revision','text',{}):''}
+    ${renderEditableCell(d,'date','date',{})}
+    ${renderEditableCell(d,'status','select',{options: statusOptions||[]})}
+    ${renderEditableCell(d,'dueDate','date',{})}
+    ${rowActionsCell(d)}
+  </tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+const REGISTER_STATUS_OPTIONS = {
+  'Procurement Register': ['Draft','Submitted','Under Review','Approved','Ordered','Delivered','Delayed','Closed','Overdue'],
+  'Invoice Register': ['Draft','Submitted','Under Review','Approved','Paid','Rejected','Overdue','Closed'],
+};
+const REGISTER_ADD_TYPE = { 'Procurement Register':'Purchase Order', 'Invoice Register':'Invoice' };
+
+function renderRegister(typeOrTypes, title, sub, showRevisionCol){
+  let docs;
+  if(!typeOrTypes) docs = projDocs();
+  else if(Array.isArray(typeOrTypes)) docs = projDocs().filter(d=>typeOrTypes.includes(d.type));
+  else docs = projDocs().filter(d=>d.type===typeOrTypes);
+  const editable = !!REGISTER_ADD_TYPE[title];
+  const statusOptions = REGISTER_STATUS_OPTIONS[title];
+  const addType = REGISTER_ADD_TYPE[title];
+  const actions = `<button class="btn" data-export-register="${esc(title)}">Export Excel</button> ` +
+    (addType ? `<button class="btn" data-add-row-type="${esc(addType)}">+ Add Row</button> ` : '') +
+    `<button class="btn primary" data-route="upload">+ Upload</button>`;
+  return pageHead(title, sub, actions) +
+  (docs.length ? renderDocTable(docs, showRevisionCol, editable, statusOptions) : `<div class="empty"><h3>No records yet</h3><p>Upload a document of this type${addType?', or add a row directly,':''} to populate the register.</p></div>`);
+}
+
+// ---------- Material Submittal / Shop Drawing Submittal / RFI: one centralized
+// documents[] array per module (discipline is a field, never a separate database —
+// see spec #23/#38), with discipline tabs that are just filtered views. ----------
+const STATUS_OPTIONS = {
+  materialsubmittal: ['Not Submitted','Submitted','Under Review','Approved','Approved as Noted','Revise and Resubmit','Rejected','Resubmitted','Closed','Overdue'],
+  shopdrawing: ['Not Submitted','Submitted','Under Review','Approved','Approved as Noted','Revise and Resubmit','Rejected','Resubmitted','Superseded','Closed','Overdue'],
+  rfi: ['Draft','Submitted','Under Review','Pending Response','Answered','Closed','Overdue'],
+};
+const MODULE_CONFIG = {
+  materialsubmittal: {
+    types: ['Material Submittal'], title: 'Material Submittal',
+    sub: 'Material and product submissions — one register, filterable by discipline, status, category, manufacturer and more.',
+    columns: [
+      {key:'number', label:'MS No.'}, {key:'discipline', label:'Discipline'}, {key:'subject', label:'Material Description'},
+      {key:'manufacturer', label:'Manufacturer'}, {key:'specSection', label:'Spec Section'}, {key:'revision', label:'Rev'},
+      {key:'date', label:'Date Submitted', fmt:'date'}, {key:'dueDate', label:'Review Deadline', fmt:'date'}, {key:'status', label:'Status', fmt:'badge'},
+    ],
+    filters: [ {key:'status', label:'Status'}, {key:'materialCategory', label:'Material Category'}, {key:'manufacturer', label:'Manufacturer'},
+      {key:'supplier', label:'Supplier'}, {key:'subcontractor', label:'Subcontractor'}, {key:'specSection', label:'Specification Section'},
+      {key:'revision', label:'Revision'}, {key:'reviewer', label:'Reviewer'}, {key:'location', label:'Location / Area'} ],
+    search: ['number','subject','manufacturer','supplier','specSection','relatedDrawing','subcontractor'],
+  },
+  shopdrawing: {
+    types: ['Shop Drawing Submittal','Drawing Revision'], title: 'Shop Drawing Submittal',
+    sub: 'Shop drawing submissions and their revision/review history — one register, filterable by discipline and status.',
+    columns: [
+      {key:'number', label:'SD No.'}, {key:'discipline', label:'Discipline'}, {key:'subject', label:'Drawing Title'},
+      {key:'drawingType', label:'Drawing Type'}, {key:'subcontractor', label:'Subcontractor'}, {key:'revision', label:'Rev'},
+      {key:'date', label:'Submission Date', fmt:'date'}, {key:'dueDate', label:'Review Deadline', fmt:'date'}, {key:'status', label:'Status', fmt:'badge'},
+    ],
+    filters: [ {key:'status', label:'Status'}, {key:'drawingType', label:'Drawing Type'}, {key:'subcontractor', label:'Subcontractor'},
+      {key:'revision', label:'Revision'}, {key:'reviewer', label:'Reviewer'}, {key:'location', label:'Location / Area'},
+      {key:'relatedSpecification', label:'Related Specification'}, {key:'relatedMaterialSubmittal', label:'Related Material Submittal'} ],
+    search: ['number','subject','subcontractor','relatedSpecification'],
+  },
+  rfi: {
+    types: ['RFI'], title: 'RFI',
+    sub: 'Requests for information — one register, filterable by discipline, status and priority.',
+    columns: [
+      {key:'number', label:'RFI No.'}, {key:'discipline', label:'Discipline'}, {key:'subject', label:'Subject'},
+      {key:'priority', label:'Priority'}, {key:'submittedBy', label:'Submitted By'},
+      {key:'date', label:'Date Submitted', fmt:'date'}, {key:'dueDate', label:'Required Response', fmt:'date'}, {key:'status', label:'Status', fmt:'badge'},
+    ],
+    filters: [ {key:'status', label:'Status'}, {key:'priority', label:'Priority'}, {key:'submittedBy', label:'Submitted By'},
+      {key:'contractor', label:'Contractor'}, {key:'subcontractor', label:'Subcontractor'}, {key:'reviewer', label:'Reviewer'}, {key:'location', label:'Location / Area'} ],
+    search: ['number','subject','question','relatedDrawing','relatedShopDrawing','relatedMaterialSubmittal'],
+  },
+};
+
+function renderModuleTable(docs, columns, moduleKey){
+  return `<div class="card overflow-x"><table><thead><tr>${columns.map(c=>`<th>${esc(c.label)}</th>`).join('')}<th></th></tr></thead><tbody>
+  ${docs.map(d=>{
+    const cells = columns.map(c=>{
+      if(c.key==='discipline') return renderEditableCell(d, 'discipline', 'select', {options: DISCIPLINES});
+      if(c.fmt==='badge') return renderEditableCell(d, c.key, 'select', {options: STATUS_OPTIONS[moduleKey]||[]});
+      if(c.fmt==='date') return renderEditableCell(d, c.key, 'date', {});
+      return renderEditableCell(d, c.key, 'text', {bold: c.key==='number'});
+    }).join('');
+    return `<tr>${cells}${rowActionsCell(d)}</tr>`;
+  }).join('')}
+  </tbody></table></div>`;
+}
+
+function moduleFilteredDocs(moduleKey){
+  const cfg = MODULE_CONFIG[moduleKey];
+  const f = (State.moduleFilters && State.moduleFilters[moduleKey]) || {discipline:'ALL', search:''};
+  let docs = projDocs().filter(d=>cfg.types.includes(d.type));
+  const allInModule = docs;
+  if(f.discipline && f.discipline!=='ALL') docs = docs.filter(d=>d.discipline===f.discipline);
+  cfg.filters.forEach(flt=>{ if(f[flt.key]) docs = docs.filter(d=> (d[flt.key]||'')===f[flt.key]); });
+  if(f.search){ const q=f.search.toLowerCase(); docs = docs.filter(d=> cfg.search.some(k=>(d[k]||'').toString().toLowerCase().includes(q))); }
+  return {docs, allInModule, f, cfg};
+}
+
+function renderDisciplineModule(moduleKey){
+  if(!State.moduleFilters) State.moduleFilters = {};
+  if(!State.moduleFilters[moduleKey]) State.moduleFilters[moduleKey] = {discipline:'ALL', search:''};
+  const {docs, allInModule, f, cfg} = moduleFilteredDocs(moduleKey);
+  const tabs = ['ALL',...DISCIPLINES];
+  const tabsHtml = `<div class="tabs">${tabs.map(t=>{
+    const count = t==='ALL' ? allInModule.length : allInModule.filter(d=>d.discipline===t).length;
+    return `<button class="tab ${f.discipline===t?'active':''}" data-module-tab="${moduleKey}" data-tab-value="${t}">${t.toUpperCase()} (${count})</button>`;
+  }).join('')}</div>`;
+  const statusOpts = STATUS_OPTIONS[moduleKey] || [];
+  const filterControls = `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:12px;">
+    ${cfg.filters.map(flt=>{
+      const opts = flt.key==='status' ? statusOpts : distinctVals(allInModule, flt.key);
+      return `<div class="field" style="margin-bottom:0;"><label>${flt.label}</label>
+        <select data-module-filter="${moduleKey}" data-filter-key="${flt.key}">
+          <option value="">All</option>
+          ${opts.map(o=>`<option value="${esc(o)}" ${f[flt.key]===o?'selected':''}>${esc(o)}</option>`).join('')}
+        </select></div>`;
+    }).join('')}
+  </div>
+  <div class="row2" style="margin-bottom:14px;align-items:end;">
+    <div class="field" style="margin-bottom:0;"><label>Search</label><input type="text" placeholder="Search by number, description, manufacturer, supplier…" data-module-search="${moduleKey}" value="${esc(f.search||'')}"></div>
+    <div class="btn-row"><button class="btn ghost" data-module-clear="${moduleKey}">Clear Filters</button></div>
+  </div>`;
+  return pageHead(cfg.title, cfg.sub,
+      `<button class="btn" data-export-module="${moduleKey}">Export Excel</button> <button class="btn" data-add-row-type="${esc(cfg.types[0])}">+ Add Row</button> <button class="btn primary" data-route="upload">+ Upload ${esc(cfg.title)}</button>`) +
+    tabsHtml + filterControls +
+    (docs.length ? renderModuleTable(docs, cfg.columns, moduleKey) : `<div class="empty"><h3>No records match these filters</h3><p>Adjust the filters above, or upload a document to populate this register, or use + Add Row to start one manually.</p></div>`);
+}
+
+function exportModuleExcel(moduleKey){
+  const {docs, f, cfg} = moduleFilteredDocs(moduleKey);
+  if(!docs.length){ toast('Nothing to export for this view'); return; }
+  const rows = docs.map(d=>{
+    const row={};
+    cfg.columns.forEach(c=>{ row[c.label] = c.fmt==='date' ? fmtDate(d[c.key]) : (d[c.key]||''); });
+    return row;
+  });
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  const sheetTitle = ((f.discipline&&f.discipline!=='ALL') ? f.discipline+' ' : 'All ')+cfg.title;
+  XLSX.utils.book_append_sheet(wb, ws, sheetTitle.slice(0,31));
+  const out = XLSX.write(wb, {type:'array', bookType:'xlsx'});
+  downloadBlob(new Blob([out],{type:'application/octet-stream'}), sheetTitle.replace(/\s+/g,'_')+'.xlsx');
+}
+
+function renderTasks(){
+  const tasks = projTasks().sort((a,b)=> new Date(a.dueDate||'2999-01-01') - new Date(b.dueDate||'2999-01-01'));
+  return pageHead('Tasks', 'Tasks the system suggested from documents, plus anything you add yourself.',
+    `<button class="btn primary" id="newTaskBtn">+ New Task</button>`) +
+  (tasks.length ? `<div class="card overflow-x"><table><thead><tr><th>Task</th><th>Responsible</th><th>Due</th><th>Source</th><th>Status</th><th></th></tr></thead><tbody>
+    ${tasks.map(t=>{
+      const dleft = daysUntil(t.dueDate);
+      let urgency = '';
+      if(t.status!=='Done' && dleft!==null){ if(dleft<0) urgency='overdue'; else if(dleft===0) urgency='pending'; else if(dleft<=3) urgency='review'; }
+      return `<tr>
+        <td>${esc(t.title)}</td><td>${esc(t.responsible||'—')}</td>
+        <td>${t.dueDate?fmtDate(t.dueDate):'—'} ${urgency?`<span class="badge ${urgency}" style="margin-left:6px;">${dleft<0?'Overdue':dleft===0?'Due today':dleft+'d left'}</span>`:''}</td>
+        <td class="muted">${esc(t.source||'—')}</td>
+        <td>${badge(t.status)}</td>
+        <td><button class="btn ghost" data-toggle-task="${t.id}" style="padding:4px 10px;">${t.status==='Done'?'Reopen':'Mark done'}</button></td>
+      </tr>`;
+    }).join('')}
+  </tbody></table></div>` : `<div class="empty"><h3>No tasks yet</h3><p>Tasks appear here automatically when documents create action items, or add one manually.</p></div>`);
+}
+
+function renderDaily(){
+  const docs = projDocs();
+  const now = Date.now(); const dayAgo = now - 86400000;
+  const today = docs.filter(d=> new Date(d.createdAt||d.date).getTime() > dayAgo);
+  const tasks = projTasks().filter(t=>t.status!=='Done');
+  const dueSoon = tasks.filter(t=>{ const d=daysUntil(t.dueDate); return d!==null && d<=3; });
+  return pageHead("Today's Project Activity", `As of ${fmtDate(new Date().toISOString())}`) +
+  `<div class="card">
+    <h3>New in the last 24 hours</h3>
+    ${today.length ? `<ul>${today.map(d=>`<li>${esc(d.type)} <b>${esc(d.number||'')}</b> — ${esc(d.subject||'')}</li>`).join('')}</ul>` : `<p class="muted">Nothing logged in the last 24 hours.</p>`}
+  </div>
+  <div class="section-title">Action required</div>
+  <div class="card">
+    ${dueSoon.length ? `<ul>${dueSoon.map(t=>`<li><b>${esc(t.source||t.title)}</b> — ${esc(t.title)} (${t.responsible||'unassigned'}, due ${fmtDate(t.dueDate)})</li>`).join('')}</ul>` : `<p class="muted">Nothing due in the next 3 days.</p>`}
+  </div>`;
+}
+
+function disciplineStatusTable(title, docs){
+  const now = Date.now();
+  const closedLike = s => ['approved','approved as noted','closed','current'].includes((s||'').toLowerCase());
+  const rows = DISCIPLINES.map(disc=>{
+    const dd = docs.filter(d=>d.discipline===disc);
+    const total = dd.length;
+    const approved = dd.filter(d=>closedLike(d.status)).length;
+    const overdue = dd.filter(d=> d.dueDate && new Date(d.dueDate).getTime()<now && !closedLike(d.status)).length;
+    return {disc, total, pending: total-approved, approved, overdue};
+  });
+  return `<div class="section-title">${esc(title)}</div>
+  <div class="card overflow-x"><table><thead><tr><th>Discipline</th><th style="text-align:right;">Total</th><th style="text-align:right;">Pending</th><th style="text-align:right;">Approved</th><th style="text-align:right;">Overdue</th></tr></thead><tbody>
+  ${rows.map(r=>`<tr><td>${r.disc}</td><td style="text-align:right;">${r.total}</td><td style="text-align:right;">${r.pending}</td><td style="text-align:right;">${r.approved}</td><td style="text-align:right;">${r.overdue}</td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+function renderWeekly(){
+  const s = computeStats();
+  return pageHead('Weekly Project Summary', "A factual roll-up of this project's activity — generate an AI narrative below when ready.",
+    `<button class="btn primary" id="genWeeklyAI">Generate AI Summary</button>`) +
+  `<div class="grid stats">
+    <div class="card stat"><div class="num">${s.docsWeek}</div><div class="lbl">Documents this week</div></div>
+    <div class="card stat"><div class="num">${s.rfis.length}</div><div class="lbl">RFIs on file</div></div>
+    <div class="card stat"><div class="num">${s.submittals.length}</div><div class="lbl">Material Submittals on file</div></div>
+    <div class="card stat"><div class="num">${s.overdueDocs.length}</div><div class="lbl">Overdue items</div></div>
+  </div>
+  ${disciplineStatusTable('Material Submittals', byType('Material Submittal'))}
+  ${disciplineStatusTable('Shop Drawing Submittals', projDocs().filter(d=>d.type==='Shop Drawing Submittal'||d.type==='Drawing Revision'))}
+  ${disciplineStatusTable('RFIs', byType('RFI'))}
+  <div id="weeklyAiOutput"></div>`;
+}
+
+function renderEmail(){
+  return pageHead('Email Center', 'Draft-only in this build — see the note below for what a live inbox connection would need.',
+    `<button class="btn primary" id="genUpdateEmail">Generate Project Update Email</button>`) +
+  `<div class="card">
+    <h3>Why this isn't a live inbox</h3>
+    <p class="muted">Connecting a real Gmail or Outlook account needs an OAuth app registration and a small server to hold the refresh token securely — this artifact runtime has no channel for that. What <i>does</i> work here: AI-drafted emails built from your real project data, which you copy into your mail client (or I can help you wire up a lightweight backend for live send/receive later).</p>
+  </div>
+  <div class="section-title">Templates</div>
+  <div class="card"><ul style="margin:0;padding-left:18px;">
+    ${['RFI Follow-up','Overdue Submittal Follow-up','Drawing Revision Notification','Procurement Follow-up','Invoice Follow-up','Weekly Project Update'].map(t=>`<li style="margin-bottom:6px;">${t} — <button class="btn ghost" data-draft-template="${esc(t)}" style="padding:2px 10px;">Draft now</button></li>`).join('')}
+  </ul></div>
+  <div id="emailDraftOutput"></div>`;
+}
+
+function renderActivity(){
+  const acts = projActivity();
+  return pageHead('Activity Log', 'A permanent, timestamped record of every confirmed change to this project.') +
+  `<div class="card">
+    ${acts.length ? acts.map(a=>`<div class="activity-item"><div class="dot"></div><div><div>${esc(a.message)}</div><div class="t">${fmtDate(a.timestamp)} — ${new Date(a.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div></div></div>`).join('') : `<p class="muted">No activity yet.</p>`}
+  </div>`;
+}
+
+function renderSearch(){
+  return pageHead('Search', 'Search across every document, register and task in this project.') +
+  `<div class="field"><input type="text" id="searchInput" placeholder="Search by number, subject, supplier, keyword…"></div>
+  <div id="searchResults"></div>`;
+}
+
+function renderAssistant(){
+  if(!State.chatLog) State.chatLog = [];
+  return pageHead('AI Assistant', "Answers are generated only from what's stored in this project — nothing invented.") +
+  `<div class="ai-box"><h3>Try asking</h3><p style="margin:0;font-size:12.5px;color:#D9D4CB;">"Show me all overdue RFIs" · "What changed this week?" · "Draft a follow-up email for SUB-018" · "Which materials are delayed?"</p></div>
+  <div class="chat-log" id="chatLog">
+    ${State.chatLog.map(m=>`<div class="chat-msg ${m.role}">${m.role==='ai'?formatAiText(m.text):esc(m.text)}</div>`).join('')}
+    ${State.chatBusy ? `<div class="chat-msg ai"><span class="spinner"></span> thinking…</div>` : ''}
+  </div>
+  <div style="display:flex;gap:8px;">
+    <input type="text" id="chatInput" placeholder="Ask about this project…" style="flex:1;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--canvas);color:var(--ink);">
+    <button class="btn primary" id="chatSend">Send</button>
+  </div>`;
+}
+function formatAiText(t){ return esc(t).replace(/\n/g,'<br>'); }
+
+function renderExport(){
+  const proj = activeProject();
+  return pageHead('Export / Backup', 'Export registers as Excel, or back up this entire project as JSON you can re-import later.') +
+  `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));">
+    <div class="card"><h4>Document Register</h4><p class="muted">All documents, all types.</p><button class="btn" data-export-register="All Documents">Export Excel</button></div>
+    <div class="card"><h4>Material Submittal</h4><p class="muted">Exports the currently selected discipline tab &amp; filters from the Material Submittal page (open it first to choose ALL or one discipline).</p><button class="btn" data-export-module="materialsubmittal">Export Excel</button></div>
+    <div class="card"><h4>Shop Drawing Submittal</h4><p class="muted">Same idea — respects the discipline tab left open on that page.</p><button class="btn" data-export-module="shopdrawing">Export Excel</button></div>
+    <div class="card"><h4>RFI</h4><p class="muted">Same idea — respects the discipline tab left open on that page.</p><button class="btn" data-export-module="rfi">Export Excel</button></div>
+    <div class="card"><h4>Procurement Register</h4><button class="btn" data-export-register="Procurement Register">Export Excel</button></div>
+    <div class="card"><h4>Invoice Register</h4><button class="btn" data-export-register="Invoice Register">Export Excel</button></div>
+    <div class="card"><h4>Full Project Backup</h4><p class="muted">JSON file with all documents, tasks and activity for ${esc(proj?proj.name:'this project')}.</p><button class="btn primary" id="exportBackup">Export Project JSON</button></div>
+    <div class="card"><h4>Import Project Backup</h4><input type="file" id="importBackupFile" accept=".json" style="font-size:12px;"></div>
+  </div>`;
+}
+
+function renderSettings(){
+  const proj = activeProject();
+  return pageHead('Settings') +
+  `<div class="section-title">Security</div>
+  <div class="card">
+    <h3>Edit password</h3>
+    <p class="muted">${State.security ? `Editing is currently <b>${State.unlocked?'unlocked':'locked'}</b> in this session. Anyone can view the project; only whoever knows the password can add, edit or delete records.` : 'No edit password has been set yet — the app will ask you to create one the first time you try to edit anything.'}</p>
+    <div class="btn-row">
+      ${State.security ? `<button class="btn" id="changePasswordBtn">Change Password</button>` : ''}
+      ${State.unlocked ? `<button class="btn ghost" id="settingsLockBtn">Lock Now</button>` : `<button class="btn primary" id="settingsUnlockBtn">Unlock</button>`}
+    </div>
+    <div class="security-note">
+      <b>Limitations to be aware of:</b> this is a password gate built into the page itself, not a server-enforced permission. It stops casual editing by anyone who opens the app without the password, but it cannot fully stop someone who is determined and technically able to inspect or modify the page's code or its stored data directly — there is no backend authentication layer here. Only your organization's own sharing/permission settings for this artifact are a real security boundary; this password is a convenience layer on top of that, not a replacement for it.
+    </div>
+  </div>
+  <div class="section-title">About this build</div>
+  <div class="card">
+    <h3>About this build</h3>
+    <p class="muted">Projects, documents, registers, tasks and activity are stored in a real persistent database tied to your account — not your browser — so they'll be here next time you open this page, on any device.</p>
+    <div class="limits-note">
+      <b>Not yet connected (needs external services):</b><br>
+      • Live Gmail/Outlook sync — needs an OAuth app + backend token store.<br>
+      • OCR for scanned (image-only) PDFs — needs a vision/OCR API.<br>
+      • Automatic sending of emails — this build only drafts; sending is a deliberate manual step by design.<br>
+      • Column mapping memory for Excel imports depends on this build's database supporting a single-document read by id — if that call isn't available, mapping is re-guessed (not remembered) on every upload of the same template.<br>
+      • Discipline detection on upload comes from the AI reading the document (or, without AI access, from the file name only, e.g. "MS-M-024") — it is never invented when neither source gives a clear answer.
+    </div>
+  </div>
+  <div class="section-title">Current project fields</div>
+  ${proj ? `<div class="card">
+    <div class="kv"><b>Name</b><span>${esc(proj.name)}</span></div>
+    <div class="kv"><b>Number</b><span>${esc(proj.number||'—')}</span></div>
+    <div class="kv"><b>Client</b><span>${esc(proj.client||'—')}</span></div>
+    <div class="kv"><b>Status</b><span>${esc(proj.status||'—')}</span></div>
+    <div style="margin-top:12px;"><button class="btn" data-edit-project="${proj.id}">Edit project details</button></div>
+  </div>` : ''}`;
+}
+
+// ================= MODALS =================
+function renderModal(){
+  const m = State.modal;
+  if(m.type==='projectForm') return projectFormModal(m.project);
+  if(m.type==='reviewDoc') return reviewDocModal(m.data);
+  if(m.type==='importSummary') return importSummaryModal(m.data, m.previousRevLabel);
+  if(m.type==='importMapping') return importMappingModal(m);
+  if(m.type==='bulkImportSummary') return bulkImportSummaryModal(m);
+  if(m.type==='bulkImportDone') return bulkImportDoneModal(m);
+  if(m.type==='viewDoc') return viewDocModal(m.doc);
+  if(m.type==='newTask') return newTaskModal();
+  if(m.type==='unlock') return unlockModal();
+  if(m.type==='setPassword') return setPasswordModal();
+  if(m.type==='changePassword') return changePasswordModal();
+  if(m.type==='confirmDelete') return confirmDeleteModal(m);
+  if(m.type==='emailDraft') return null; // rendered inline, not modal
+  return '';
+}
+
+function unlockModal(){
+  return `<div class="modal-bg" id="modalBg"><div class="modal" style="max-width:380px;">
+    <h2>Unlock Editing</h2>
+    <p class="muted" style="margin-top:0;">Enter your password to edit project data and settings. Viewing stays available either way.</p>
+    <div class="field"><label>Password</label><input type="password" id="unlockPw" autocomplete="current-password"></div>
+    <p id="unlockErr" class="muted" style="color:var(--warn);display:none;">Incorrect password.</p>
+    <div class="btn-row" style="justify-content:flex-end;">
+      <button class="btn ghost" id="modalCancel">Cancel</button>
+      <button class="btn primary" id="submitUnlock">Unlock</button>
+    </div>
+  </div></div>`;
+}
+
+function setPasswordModal(){
+  return `<div class="modal-bg" id="modalBg"><div class="modal" style="max-width:420px;">
+    <h2>Set an Edit Password</h2>
+    <p class="muted" style="margin-top:0;">No password has been set yet. Choose one now — only whoever enters it can add, edit or delete project data. You can change it later from Settings.</p>
+    <div class="field"><label>New password</label><input type="password" id="newPw1" autocomplete="new-password"></div>
+    <div class="field"><label>Confirm password</label><input type="password" id="newPw2" autocomplete="new-password"></div>
+    <p class="limits-note" style="border-top:none;padding-top:0;">This is client-side protection only — see Settings &gt; Security for what that does and doesn't guard against.</p>
+    <div class="btn-row" style="justify-content:flex-end;">
+      <button class="btn ghost" id="modalCancel">Cancel</button>
+      <button class="btn primary" id="submitSetPassword">Set Password &amp; Unlock</button>
+    </div>
+  </div></div>`;
+}
+
+function changePasswordModal(){
+  return `<div class="modal-bg" id="modalBg"><div class="modal" style="max-width:420px;">
+    <h2>Change Edit Password</h2>
+    <div class="field"><label>Current password</label><input type="password" id="curPw" autocomplete="current-password"></div>
+    <div class="field"><label>New password</label><input type="password" id="cNewPw1" autocomplete="new-password"></div>
+    <div class="field"><label>Confirm new password</label><input type="password" id="cNewPw2" autocomplete="new-password"></div>
+    <div class="btn-row" style="justify-content:flex-end;">
+      <button class="btn ghost" id="modalCancel">Cancel</button>
+      <button class="btn primary" id="submitChangePassword">Update Password</button>
+    </div>
+  </div></div>`;
+}
+
+function confirmDeleteModal(m){
+  return `<div class="modal-bg" id="modalBg"><div class="modal" style="max-width:400px;">
+    <h2>Delete this record?</h2>
+    <p class="muted" style="margin-top:0;">${esc(m.label||'This item')} will be permanently removed from the register. This can't be undone.</p>
+    <div class="btn-row" style="justify-content:flex-end;">
+      <button class="btn ghost" id="modalCancel">Cancel</button>
+      <button class="btn" style="background:var(--warn);border-color:var(--warn);color:#fff;" id="modalConfirmDelete" data-doc-id="${m.docId}">Delete</button>
+    </div>
+  </div></div>`;
+}
+
+function projectFormModal(p){
+  const isNew = !p;
+  p = p || {};
+  return `<div class="modal-bg" id="modalBg"><div class="modal">
+    <h2>${isNew?'New Project':'Edit Project'}</h2>
+    <p class="muted" style="margin-top:0;">Each project keeps its documents and registers completely separate.</p>
+    <div class="row2">
+      <div class="field"><label>Project name</label><input id="f_name" value="${esc(p.name||'')}"></div>
+      <div class="field"><label>Project number</label><input id="f_number" value="${esc(p.number||'')}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Client</label><input id="f_client" value="${esc(p.client||'')}"></div>
+      <div class="field"><label>Main contractor</label><input id="f_mainContractor" value="${esc(p.mainContractor||'')}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Consultant</label><input id="f_consultant" value="${esc(p.consultant||'')}"></div>
+      <div class="field"><label>Project manager</label><input id="f_pm" value="${esc(p.pm||'')}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Site engineer</label><input id="f_siteEngineer" value="${esc(p.siteEngineer||'')}"></div>
+      <div class="field"><label>Architect</label><input id="f_architect" value="${esc(p.architect||'')}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Document controller</label><input id="f_docController" value="${esc(p.docController||'')}"></div>
+      <div class="field"><label>Location</label><input id="f_location" value="${esc(p.location||'')}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Start date</label><input type="date" id="f_startDate" value="${(p.startDate||'').slice(0,10)}"></div>
+      <div class="field"><label>Target completion</label><input type="date" id="f_targetDate" value="${(p.targetDate||'').slice(0,10)}"></div>
+    </div>
+    <div class="field"><label>Status</label>
+      <select id="f_status">
+        ${['Active','On Hold','Closed'].map(s=>`<option ${p.status===s?'selected':''}>${s}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field"><label>Description</label><textarea id="f_description">${esc(p.description||'')}</textarea></div>
+    <div class="btn-row" style="justify-content:flex-end;margin-top:8px;">
+      <button class="btn ghost" id="modalCancel">Cancel</button>
+      <button class="btn primary" id="modalSaveProject" data-id="${p.id||''}">Save Project</button>
+    </div>
+  </div></div>`;
+}
+
+function reviewDocModal(d){
+  return `<div class="modal-bg" id="modalBg"><div class="modal">
+    <h2>Import Preview</h2>
+    <p class="muted" style="margin-top:0;">Nothing is written to any register until you confirm. Every field below is editable — correct anything the AI got wrong, then confirm.</p>
+    <div class="ai-suggest">
+      <h4>DETECTED DOCUMENT</h4>
+      <div class="kv"><b>File</b><span>${esc(d.fileName)}</span></div>
+      <div class="kv"><b>Type</b><span>${esc(d.type)}</span></div>
+      <div class="kv"><b>Discipline</b><span>${esc(d.discipline||'Not detected')}</span></div>
+      ${d.number?`<div class="kv"><b>Number</b><span>${esc(d.number)}</span></div>`:''}
+      ${d.revision?`<div class="kv"><b>Revision</b><span>${esc(d.revision)}</span></div>`:''}
+    </div>
+    ${d.isRevisionUpdate ? `<div class="ai-suggest" style="border-color:var(--orange);">
+      <h4>REVISION UPDATE DETECTED</h4>
+      <p style="margin:0;font-size:12.5px;">An existing record with number <b>${esc(d.number)}</b> was found (previous revision: <b>${esc(d.previousRevision||'—')}</b>). Confirming will keep the old revision in the register marked <b>Superseded</b> and add this one as the current revision — nothing is deleted.</p>
+    </div>` : ''}
+    <div class="row2">
+      <div class="field"><label>Document type</label>
+        <select id="r_type">
+          ${DOC_TYPES.map(t=>`<option ${d.type===t?'selected':''}>${t}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field"><label>Discipline</label>
+        <select id="r_discipline">
+          <option value="" ${!d.discipline?'selected':''}>—</option>
+          ${DISCIPLINES.map(t=>`<option ${d.discipline===t?'selected':''}>${t}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Number</label><input id="r_number" value="${esc(d.number||'')}"></div>
+      <div class="field"><label>Subject / Description / Title</label><input id="r_subject" value="${esc(d.subject||'')}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Date submitted / issued</label><input type="date" id="r_date" value="${(d.date||'').slice(0,10)}"></div>
+      <div class="field"><label>Due / review / response date</label><input type="date" id="r_dueDate" value="${(d.dueDate||'').slice(0,10)}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Revision</label><input id="r_revision" value="${esc(d.revision||'')}"></div>
+      <div class="field"><label>Status</label><input id="r_status" value="${esc(d.status||'Submitted')}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Submitted by</label><input id="r_submittedBy" value="${esc(d.submittedBy||'')}"></div>
+      <div class="field"><label>Reviewer / Consultant</label><input id="r_reviewer" value="${esc(d.reviewer||'')}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Manufacturer</label><input id="r_manufacturer" value="${esc(d.manufacturer||'')}"></div>
+      <div class="field"><label>Supplier</label><input id="r_supplier" value="${esc(d.supplier||'')}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Subcontractor</label><input id="r_subcontractor" value="${esc(d.subcontractor||'')}"></div>
+      <div class="field"><label>Contractor</label><input id="r_contractor" value="${esc(d.contractor||'')}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Specification section</label><input id="r_specSection" value="${esc(d.specSection||'')}"></div>
+      <div class="field"><label>Material category</label><input id="r_materialCategory" value="${esc(d.materialCategory||'')}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Drawing type (Shop Drawing Submittal)</label><input id="r_drawingType" value="${esc(d.drawingType||'')}"></div>
+      <div class="field"><label>Location / Area</label><input id="r_location" value="${esc(d.location||'')}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Related drawing no.</label><input id="r_relatedDrawing" value="${esc(d.relatedDrawing||'')}"></div>
+      <div class="field"><label>Related specification</label><input id="r_relatedSpecification" value="${esc(d.relatedSpecification||'')}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Related Material Submittal no.</label><input id="r_relatedMaterialSubmittal" value="${esc(d.relatedMaterialSubmittal||'')}"></div>
+      <div class="field"><label>Related Shop Drawing Submittal no.</label><input id="r_relatedShopDrawing" value="${esc(d.relatedShopDrawing||'')}"></div>
+    </div>
+    <div class="field"><label>Priority (RFI only)</label>
+      <select id="r_priority"><option value="" ${!d.priority?'selected':''}>—</option>${['Low','Medium','High'].map(p=>`<option ${d.priority===p?'selected':''}>${p}</option>`).join('')}</select>
+    </div>
+    <div class="field"><label>Question / Clarification (RFI only)</label><textarea id="r_question">${esc(d.question||'')}</textarea></div>
+    <div class="field"><label>AI summary / Remarks</label><textarea id="r_summary">${esc(d.summary||'')}</textarea></div>
+    <div class="btn-row" style="justify-content:flex-end;margin-top:8px;">
+      <button class="btn ghost" id="modalCancel">Cancel</button>
+      <button class="btn primary" id="modalConfirmDoc">Confirm Import</button>
+    </div>
+  </div></div>`;
+}
+
+function importSummaryModal(d, previousRevLabel){
+  const label = d.type==='Material Submittal' ? 'MATERIAL SUBMITTAL UPDATE'
+    : d.type==='Shop Drawing Submittal' ? 'SHOP DRAWING UPDATE' : 'RFI UPDATE';
+  return `<div class="modal-bg" id="modalBg"><div class="modal">
+    <h2>Import Completed</h2>
+    <div class="ai-suggest"><h4>${label}</h4>
+      <div class="kv"><b>Number</b><span>${esc(d.number||'—')}</span></div>
+      ${d.discipline?`<div class="kv"><b>Discipline</b><span>${esc(d.discipline)}</span></div>`:''}
+      <div class="kv"><b>Subject</b><span>${esc(d.subject||'—')}</span></div>
+      <div class="kv"><b>Status</b><span>${esc(d.status||'—')}</span></div>
+      ${d.revision?`<div class="kv"><b>Current revision</b><span>${esc(d.revision)}</span></div>`:''}
+      ${previousRevLabel?`<div class="kv"><b>Previous revision</b><span>${esc(previousRevLabel)} (Superseded)</span></div>`:''}
+      ${d.dueDate?`<div class="kv"><b>Deadline</b><span>${fmtDate(d.dueDate)}</span></div>`:''}
+    </div>
+    <h4 style="margin-top:12px;">AI Summary</h4>
+    <p style="font-size:13px;">${esc(d.summary||'No summary available.')}</p>
+    <p class="limits-note" style="border-top:none;margin-top:2px;padding-top:0;"><b>AI-generated summary — human review required.</b></p>
+    <div class="btn-row" style="justify-content:flex-end;">
+      <button class="btn primary" id="modalCancel">Done</button>
+    </div>
+  </div></div>`;
+}
+
+function findRecordByNumber(type, number){
+  if(!number) return null;
+  return State.documents.find(x=>x.projectId===State.activeProjectId && x.number===number &&
+    (Array.isArray(type)?type.includes(x.type):x.type===type));
+}
+
+function viewDocModal(d){
+  const relLinks = [];
+  if(d.relatedMaterialSubmittal){ const r=findRecordByNumber('Material Submittal', d.relatedMaterialSubmittal); relLinks.push(['Related Material Submittal', d.relatedMaterialSubmittal, r]); }
+  if(d.relatedShopDrawing){ const r=findRecordByNumber(['Shop Drawing Submittal','Drawing Revision'], d.relatedShopDrawing); relLinks.push(['Related Shop Drawing Submittal', d.relatedShopDrawing, r]); }
+  if(d.relatedDrawing){ const r=findRecordByNumber(['Shop Drawing Submittal','Drawing Revision'], d.relatedDrawing); relLinks.push(['Related Drawing No.', d.relatedDrawing, r]); }
+  return `<div class="modal-bg" id="modalBg"><div class="modal">
+    <h2>${esc(d.number||d.type)}</h2>
+    <p class="muted" style="margin-top:0;">${esc(d.fileName||'')}</p>
+    <div class="kv"><b>Type</b><span>${esc(d.type)}</span></div>
+    ${d.discipline?`<div class="kv"><b>Discipline</b><span>${esc(d.discipline)}</span></div>`:''}
+    <div class="kv"><b>Subject</b><span>${esc(d.subject||'—')}</span></div>
+    <div class="kv"><b>Date</b><span>${fmtDate(d.date)}</span></div>
+    <div class="kv"><b>Status</b><span>${d.status||'—'}</span></div>
+    <div class="kv"><b>Submitted by</b><span>${esc(d.submittedBy||'—')}</span></div>
+    ${d.reviewer?`<div class="kv"><b>Reviewer</b><span>${esc(d.reviewer)}</span></div>`:''}
+    ${d.manufacturer?`<div class="kv"><b>Manufacturer</b><span>${esc(d.manufacturer)}</span></div>`:''}
+    ${d.supplier?`<div class="kv"><b>Supplier</b><span>${esc(d.supplier)}</span></div>`:''}
+    ${d.subcontractor?`<div class="kv"><b>Subcontractor</b><span>${esc(d.subcontractor)}</span></div>`:''}
+    ${d.specSection?`<div class="kv"><b>Spec section</b><span>${esc(d.specSection)}</span></div>`:''}
+    ${d.location?`<div class="kv"><b>Location / Area</b><span>${esc(d.location)}</span></div>`:''}
+    ${d.priority?`<div class="kv"><b>Priority</b><span>${esc(d.priority)}</span></div>`:''}
+    ${d.revision?`<div class="kv"><b>Revision</b><span>${esc(d.revision)}</span></div>`:''}
+    ${d.previousRevision?`<div class="kv"><b>Previous revision</b><span>${esc(d.previousRevision)}</span></div>`:''}
+    ${d.dueDate?`<div class="kv"><b>Due</b><span>${fmtDate(d.dueDate)}</span></div>`:''}
+    ${d.question?`<h4 style="margin-top:14px;">Question / Clarification</h4><p style="font-size:13px;">${esc(d.question)}</p>`:''}
+    <h4 style="margin-top:14px;">Summary / Remarks</h4>
+    <p style="font-size:13px;">${esc(d.summary||'No summary available.')}</p>
+    ${relLinks.length?`<h4 style="margin-top:14px;">Cross-references</h4>${relLinks.map(([lbl,num,r])=>
+      `<div class="kv"><b>${lbl}</b><span>${r?`<button class="btn ghost" data-view-doc="${r.id}" style="padding:2px 10px;">${esc(num)} →</button>`:esc(num)+' <span class="muted">(not found in this project)</span>'}</span></div>`
+    ).join('')}`:''}
+    <div class="btn-row" style="justify-content:flex-end;margin-top:10px;">
+      <button class="btn" id="modalCancel">Close</button>
+    </div>
+  </div></div>`;
+}
+
+function importMappingModal(m){
+  const labels = FIELD_LABELS[m.moduleKey];
+  return `<div class="modal-bg" id="modalBg"><div class="modal" style="max-width:720px;">
+    <h2>Column Mapping</h2>
+    <p class="muted" style="margin-top:0;">${esc(m.fileName)} — ${m.rows.length} rows detected. Confirm which column maps to which field (or leave it Ignored), then continue.</p>
+    <div class="field"><label>Target module</label>
+      <select id="map_module">
+        ${Object.keys(FIELD_LABELS).map(mk=>`<option value="${mk}" ${m.moduleKey===mk?'selected':''}>${MODULE_CONFIG[mk].title}</option>`).join('')}
+      </select>
+    </div>
+    <div style="max-height:360px;overflow-y:auto;margin:10px 0;">
+    ${m.headers.map(h=>`<div class="row2" style="margin-bottom:8px;align-items:center;">
+      <div style="font-size:12.5px;overflow-wrap:anywhere;"><b>${esc(h)}</b></div>
+      <select data-map-header="${esc(h)}">
+        <option value="">(ignore)</option>
+        ${Object.entries(labels).map(([k,lbl])=>`<option value="${k}" ${m.mapping[h]===k?'selected':''}>${esc(lbl)}</option>`).join('')}
+      </select>
+    </div>`).join('')}
+    </div>
+    <p class="limits-note">Column mappings are remembered for files with this same set of column headers, so next time you upload from the same template it should map itself.</p>
+    <div class="btn-row" style="justify-content:flex-end;">
+      <button class="btn ghost" id="modalCancel">Cancel</button>
+      <button class="btn primary" id="modalContinueMapping">Continue</button>
+    </div>
+  </div></div>`;
+}
+
+function bulkImportSummaryModal(state){
+  const d = state.diff, cfg = MODULE_CONFIG[state.moduleKey];
+  return `<div class="modal-bg" id="modalBg"><div class="modal">
+    <h2>Import Summary</h2>
+    <div class="ai-suggest"><h4>${esc(state.fileName)} → ${esc(cfg.title)}</h4>
+      <div class="kv"><b>Records Processed</b><span>${d.total}</span></div>
+      <div class="kv"><b>New</b><span>${d.newCount}</span></div>
+      <div class="kv"><b>Updated</b><span>${d.updatedCount}</span></div>
+      <div class="kv"><b>Revision Changes</b><span>${d.revisionCount}</span></div>
+      <div class="kv"><b>Unchanged</b><span>${d.unchangedCount}</span></div>
+      <div class="kv"><b>Potential Duplicates</b><span>${d.duplicateCount}</span></div>
+    </div>
+    <p class="muted">Confirming applies new records, field updates and revision changes to the ${esc(cfg.title)} register. Unchanged rows are left as-is and nothing is ever deleted.</p>
+    <div class="btn-row" style="justify-content:flex-end;">
+      <button class="btn ghost" id="modalCancel">Cancel</button>
+      <button class="btn primary" id="modalConfirmBulkImport">Confirm Update</button>
+    </div>
+  </div></div>`;
+}
+
+function bulkImportDoneModal(state){
+  const d = state.diff;
+  return `<div class="modal-bg" id="modalBg"><div class="modal">
+    <h2>Import Completed</h2>
+    <div class="ai-suggest"><h4>${esc(state.title)} register updated</h4>
+      <div class="kv"><b>New</b><span>${d.newCount}</span></div>
+      <div class="kv"><b>Updated</b><span>${d.updatedCount}</span></div>
+      <div class="kv"><b>Revisions</b><span>${d.revisionCount}</span></div>
+      <div class="kv"><b>Unchanged</b><span>${d.unchangedCount}</span></div>
+    </div>
+    <h4 style="margin-top:12px;">What Changed?</h4>
+    <p style="font-size:13px;">${esc(state.summary)}</p>
+    <p class="limits-note" style="border-top:none;margin-top:2px;padding-top:0;"><b>AI-generated summary — human review required.</b></p>
+    <div class="btn-row" style="justify-content:flex-end;">
+      <button class="btn primary" id="modalCancel">Done</button>
+    </div>
+  </div></div>`;
+}
+
+function newTaskModal(){
+  return `<div class="modal-bg" id="modalBg"><div class="modal">
+    <h2>New Task</h2>
+    <div class="field"><label>Title</label><input id="t_title"></div>
+    <div class="row2">
+      <div class="field"><label>Responsible</label><input id="t_responsible"></div>
+      <div class="field"><label>Due date</label><input type="date" id="t_dueDate"></div>
+    </div>
+    <div class="btn-row" style="justify-content:flex-end;">
+      <button class="btn ghost" id="modalCancel">Cancel</button>
+      <button class="btn primary" id="modalSaveTask">Save Task</button>
+    </div>
+  </div></div>`;
+}
+
+// ================= EVENT HANDLERS =================
+function attachHandlers(){
+  document.querySelectorAll('[data-route]').forEach(el=>{
+    el.addEventListener('click', ()=>{ State.route = el.getAttribute('data-route'); render(); });
+  });
+  const psel = document.getElementById('projectSelect');
+  if(psel) psel.addEventListener('change', e=>{ State.activeProjectId = e.target.value; render(); });
+
+  document.getElementById('createFirstProject')?.addEventListener('click', ()=>{ if(!requireUnlock()) return; State.modal={type:'projectForm'}; render(); });
+  document.getElementById('newProjectBtn')?.addEventListener('click', ()=>{ if(!requireUnlock()) return; State.modal={type:'projectForm'}; render(); });
+  document.querySelectorAll('[data-edit-project]').forEach(el=>{
+    el.addEventListener('click', ()=>{ if(!requireUnlock()) return; const p = State.projects.find(x=>x.id===el.getAttribute('data-edit-project')); State.modal={type:'projectForm',project:p}; render(); });
+  });
+  document.querySelectorAll('[data-open-project]').forEach(el=>{
+    el.addEventListener('click', ()=>{ State.activeProjectId = el.getAttribute('data-open-project'); State.route='dashboard'; render(); });
+  });
+
+  document.getElementById('modalCancel')?.addEventListener('click', ()=>{ State.modal=null; render(); });
+  document.getElementById('modalBg')?.addEventListener('click', (e)=>{ if(e.target.id==='modalBg'){ State.modal=null; render(); } });
+
+  // ---- lock / unlock / password ----
+  document.getElementById('unlockBtn')?.addEventListener('click', ()=> requireUnlock());
+  document.getElementById('lockBtn')?.addEventListener('click', lockApp);
+
+  document.getElementById('unlockPw')?.addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('submitUnlock')?.click(); });
+  document.getElementById('submitUnlock')?.addEventListener('click', async ()=>{
+    const pw = document.getElementById('unlockPw').value || '';
+    const hash = await hashPassword(pw, State.security.salt);
+    if(hash === State.security.hash){
+      State.unlocked = true; State.modal = null; toast('Editing unlocked'); render();
+    } else {
+      const err = document.getElementById('unlockErr'); if(err) err.style.display = 'block';
+      const pwEl = document.getElementById('unlockPw'); if(pwEl){ pwEl.value=''; pwEl.focus(); }
+    }
+  });
+
+  document.getElementById('submitSetPassword')?.addEventListener('click', async ()=>{
+    const p1 = document.getElementById('newPw1').value || '', p2 = document.getElementById('newPw2').value || '';
+    if(p1.length < 4){ toast('Password must be at least 4 characters'); return; }
+    if(p1 !== p2){ toast('Passwords do not match'); return; }
+    const salt = randomHex(16);
+    const hash = await hashPassword(p1, salt);
+    const data = { hash, salt, updatedAt: new Date().toISOString() };
+    await persist('settings', 'security', data);
+    State.security = data; State.unlocked = true; State.modal = null;
+    toast('Password set — editing unlocked'); render();
+  });
+
+  document.getElementById('submitChangePassword')?.addEventListener('click', async ()=>{
+    const cur = document.getElementById('curPw').value || '';
+    const p1 = document.getElementById('cNewPw1').value || '', p2 = document.getElementById('cNewPw2').value || '';
+    const curHash = await hashPassword(cur, State.security.salt);
+    if(curHash !== State.security.hash){ toast('Current password is incorrect'); return; }
+    if(p1.length < 4){ toast('New password must be at least 4 characters'); return; }
+    if(p1 !== p2){ toast('New passwords do not match'); return; }
+    const salt = randomHex(16);
+    const hash = await hashPassword(p1, salt);
+    const data = { hash, salt, updatedAt: new Date().toISOString() };
+    await persist('settings', 'security', data);
+    State.security = data; State.modal = null;
+    toast('Password updated'); render();
+  });
+
+  document.getElementById('settingsUnlockBtn')?.addEventListener('click', ()=> requireUnlock());
+  document.getElementById('settingsLockBtn')?.addEventListener('click', lockApp);
+  document.getElementById('changePasswordBtn')?.addEventListener('click', ()=>{
+    if(!requireUnlock()) return;
+    State.modal = { type:'changePassword' }; render();
+  });
+
+  document.getElementById('modalConfirmDelete')?.addEventListener('click', async ()=>{
+    const id = document.getElementById('modalConfirmDelete').getAttribute('data-doc-id');
+    await performDeleteDoc(id);
+    State.modal = null; toast('Deleted'); render();
+  });
+
+  document.getElementById('modalSaveProject')?.addEventListener('click', async ()=>{
+    const id = document.getElementById('modalSaveProject').getAttribute('data-id') || uid();
+    const data = {
+      name: document.getElementById('f_name').value.trim() || 'Untitled Project',
+      number: document.getElementById('f_number').value.trim(),
+      client: document.getElementById('f_client').value.trim(),
+      mainContractor: document.getElementById('f_mainContractor').value.trim(),
+      consultant: document.getElementById('f_consultant').value.trim(),
+      pm: document.getElementById('f_pm').value.trim(),
+      siteEngineer: document.getElementById('f_siteEngineer').value.trim(),
+      architect: document.getElementById('f_architect').value.trim(),
+      docController: document.getElementById('f_docController').value.trim(),
+      location: document.getElementById('f_location').value.trim(),
+      startDate: document.getElementById('f_startDate').value,
+      targetDate: document.getElementById('f_targetDate').value,
+      status: document.getElementById('f_status').value,
+      description: document.getElementById('f_description').value.trim(),
+      createdAt: new Date().toISOString(),
+    };
+    const existingIdx = State.projects.findIndex(p=>p.id===id);
+    if(existingIdx>=0) State.projects[existingIdx] = {...State.projects[existingIdx], ...data};
+    else State.projects.push({...data,id});
+    await persist('projects', id, data);
+    State.activeProjectId = id;
+    State.modal = null;
+    toast('Project saved');
+    render();
+  });
+
+  // upload page
+  const dz = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  document.getElementById('browseBtn')?.addEventListener('click', ()=>{ if(!requireUnlock()) return; fileInput.click(); });
+  if(dz){
+    dz.addEventListener('dragover', e=>{ e.preventDefault(); dz.classList.add('drag'); });
+    dz.addEventListener('dragleave', ()=> dz.classList.remove('drag'));
+    dz.addEventListener('drop', e=>{ e.preventDefault(); dz.classList.remove('drag'); if(!requireUnlock()) return; handleFiles(e.dataTransfer.files); });
+  }
+  fileInput?.addEventListener('change', e=>{ if(!requireUnlock()) return; handleFiles(e.target.files); });
+
+  document.querySelectorAll('[data-view-doc]').forEach(el=>{
+    el.addEventListener('click', ()=>{ const d = State.documents.find(x=>x.id===el.getAttribute('data-view-doc')); State.modal={type:'viewDoc',doc:d}; render(); });
+  });
+
+  // ---- row-level add / duplicate / delete, and per-cell inline editing ----
+  document.querySelectorAll('[data-add-row-type]').forEach(el=>{
+    el.addEventListener('click', ()=> addNewDocRow(el.getAttribute('data-add-row-type')));
+  });
+  document.querySelectorAll('[data-duplicate-doc]').forEach(el=>{
+    el.addEventListener('click', ()=> duplicateDocRow(el.getAttribute('data-duplicate-doc')));
+  });
+  document.querySelectorAll('[data-delete-doc]').forEach(el=>{
+    el.addEventListener('click', ()=> askDeleteDocRow(el.getAttribute('data-delete-doc')));
+  });
+  document.querySelectorAll('[data-edit-cell]').forEach(el=>{
+    el.addEventListener('click', ()=> startCellEdit(el.getAttribute('data-edit-cell'), el.getAttribute('data-edit-field')));
+  });
+  document.querySelectorAll('[data-cell-input]').forEach(el=>{
+    const docId = el.getAttribute('data-doc-id'), field = el.getAttribute('data-field');
+    const commit = ()=> commitCellEdit(docId, field, el.value);
+    if(el.tagName==='SELECT'){
+      el.addEventListener('change', commit);
+    } else {
+      el.addEventListener('keydown', e=>{
+        if(e.key==='Enter'){ e.preventDefault(); commit(); }
+        else if(e.key==='Escape'){ e.preventDefault(); cancelCellEdit(); }
+      });
+    }
+    el.addEventListener('blur', ()=>{
+      if(State.editingCell && State.editingCell.docId===docId && State.editingCell.field===field) commit();
+    });
+  });
+  { const activeInput = document.querySelector('[data-cell-input]');
+    if(activeInput){ activeInput.focus(); if(typeof activeInput.select==='function'){ try{ activeInput.select(); }catch(e){} } } }
+
+  document.getElementById('modalConfirmDoc')?.addEventListener('click', async ()=>{
+    const d = State.modal.data;
+    const val = id => (document.getElementById(id)?.value||'').trim();
+    const finalDoc = {
+      id: d.id, projectId: State.activeProjectId, fileName: d.fileName,
+      type: val('r_type'), discipline: val('r_discipline') || null,
+      number: val('r_number'), subject: val('r_subject'),
+      date: document.getElementById('r_date').value || new Date().toISOString(),
+      relatedDrawing: val('r_relatedDrawing'),
+      submittedBy: val('r_submittedBy'), status: val('r_status') || 'Submitted',
+      dueDate: document.getElementById('r_dueDate').value || null,
+      revision: val('r_revision'), summary: val('r_summary'),
+      reviewer: val('r_reviewer'), manufacturer: val('r_manufacturer'), supplier: val('r_supplier'),
+      subcontractor: val('r_subcontractor'), contractor: val('r_contractor'),
+      specSection: val('r_specSection'), materialCategory: val('r_materialCategory'),
+      drawingType: val('r_drawingType'), location: val('r_location'),
+      relatedSpecification: val('r_relatedSpecification'),
+      relatedMaterialSubmittal: val('r_relatedMaterialSubmittal'), relatedShopDrawing: val('r_relatedShopDrawing'),
+      priority: val('r_priority'), question: val('r_question'),
+      assetId: d.assetId || null,
+      createdAt: new Date().toISOString(),
+    };
+    // revision control: one centralized array per type, discipline is just a field on each
+    // record — superseding never creates a separate database per discipline (see #23/#38).
+    let previousRevLabel = null;
+    if((finalDoc.type==='Shop Drawing Submittal' || finalDoc.type==='Drawing Revision' || finalDoc.type==='Material Submittal') && finalDoc.number){
+      const siblings = State.documents.filter(x=>x.projectId===State.activeProjectId && x.type===finalDoc.type && x.number===finalDoc.number && x.id!==finalDoc.id);
+      siblings.forEach(x=>{ x.status='Superseded'; persist('documents', x.id, x); });
+      if(siblings.length){ previousRevLabel = siblings.map(x=>x.revision).filter(Boolean).sort().reverse()[0] || null; finalDoc.previousRevision = previousRevLabel; }
+      if(!finalDoc.status || finalDoc.status==='Submitted') finalDoc.status = siblings.length ? finalDoc.status : finalDoc.status;
+    }
+    State.documents.push(finalDoc);
+    await persist('documents', finalDoc.id, finalDoc);
+    const discTag = finalDoc.discipline ? ` [${finalDoc.discipline}]` : '';
+    await logActivity(State.activeProjectId, `${finalDoc.type}${discTag} ${finalDoc.number?('— '+finalDoc.number+' '):''}added: ${finalDoc.subject||'(no subject)'} (${finalDoc.status}).`);
+    if(previousRevLabel){
+      await logActivity(State.activeProjectId, `${finalDoc.number} — previous revision ${previousRevLabel} marked Superseded; ${finalDoc.revision||'new revision'} is now current.`);
+    }
+    // auto task if dueDate present
+    if(finalDoc.dueDate){
+      const task = {id:uid(), projectId:State.activeProjectId, title:`Follow up ${finalDoc.type} ${finalDoc.number||''}`.trim(), responsible: finalDoc.reviewer||finalDoc.submittedBy||'Unassigned', dueDate: finalDoc.dueDate, status:'Open', source: finalDoc.number||finalDoc.type, createdAt:new Date().toISOString()};
+      State.tasks.push(task);
+      await persist('tasks', task.id, task);
+    }
+    State.modal = {type:'importSummary', data: finalDoc, previousRevLabel};
+    toast('Saved to register');
+    render();
+  });
+
+  // registers export
+  document.querySelectorAll('[data-export-register]').forEach(el=>{
+    el.addEventListener('click', ()=> exportRegisterExcel(el.getAttribute('data-export-register')));
+  });
+
+  // discipline module: tabs / filters / search / clear / export
+  document.querySelectorAll('[data-module-tab]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const key = el.getAttribute('data-module-tab');
+      if(!State.moduleFilters[key]) State.moduleFilters[key] = {discipline:'ALL', search:''};
+      State.moduleFilters[key].discipline = el.getAttribute('data-tab-value');
+      render();
+    });
+  });
+  document.querySelectorAll('[data-module-filter]').forEach(el=>{
+    el.addEventListener('change', ()=>{
+      const key = el.getAttribute('data-module-filter'), fk = el.getAttribute('data-filter-key');
+      State.moduleFilters[key][fk] = el.value;
+      render();
+    });
+  });
+  document.querySelectorAll('[data-module-search]').forEach(el=>{
+    el.addEventListener('input', ()=>{
+      const key = el.getAttribute('data-module-search');
+      State.moduleFilters[key].search = el.value;
+      render();
+      const again = document.querySelector(`[data-module-search="${key}"]`);
+      if(again){ again.focus(); const len = again.value.length; again.setSelectionRange(len,len); }
+    });
+  });
+  document.querySelectorAll('[data-module-clear]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      State.moduleFilters[el.getAttribute('data-module-clear')] = {discipline:'ALL', search:''};
+      render();
+    });
+  });
+  document.querySelectorAll('[data-export-module]').forEach(el=>{
+    el.addEventListener('click', ()=> exportModuleExcel(el.getAttribute('data-export-module')));
+  });
+
+  // bulk excel import: mapping modal
+  document.getElementById('map_module')?.addEventListener('change', e=>{
+    const mk = e.target.value;
+    const {mapping} = guessMappingFor(mk, State.modal.headers);
+    State.modal.moduleKey = mk; State.modal.mapping = mapping;
+    render();
+  });
+  document.querySelectorAll('[data-map-header]').forEach(el=>{
+    el.addEventListener('change', ()=>{
+      State.modal.mapping[el.getAttribute('data-map-header')] = el.value || null;
+    });
+  });
+  document.getElementById('modalContinueMapping')?.addEventListener('click', ()=>{
+    const m = State.modal;
+    const diff = computeImportDiff(m.moduleKey, m.rows, m.mapping);
+    State.modal = {type:'bulkImportSummary', moduleKey:m.moduleKey, mapping:m.mapping, sig:m.sig, fileName:m.fileName, diff};
+    render();
+  });
+  document.getElementById('modalConfirmBulkImport')?.addEventListener('click', async ()=>{
+    if(!requireUnlock()) return;
+    const m = State.modal;
+    await applyBulkImport(m);
+  });
+
+  // dashboard discipline filter
+  document.getElementById('dashDisciplineFilter')?.addEventListener('change', e=>{
+    State.dashboardDiscipline = e.target.value;
+    render();
+  });
+
+  // tasks
+  document.getElementById('newTaskBtn')?.addEventListener('click', ()=>{ if(!requireUnlock()) return; State.modal={type:'newTask'}; render(); });
+  document.getElementById('modalSaveTask')?.addEventListener('click', async ()=>{
+    const task = {id:uid(), projectId:State.activeProjectId, title:document.getElementById('t_title').value.trim(), responsible:document.getElementById('t_responsible').value.trim(), dueDate:document.getElementById('t_dueDate').value||null, status:'Open', source:'Manual', createdAt:new Date().toISOString()};
+    if(!task.title){ toast('Task needs a title'); return; }
+    State.tasks.push(task); await persist('tasks',task.id,task);
+    State.modal=null; render();
+  });
+  document.querySelectorAll('[data-toggle-task]').forEach(el=>{
+    el.addEventListener('click', async ()=>{
+      if(!requireUnlock()) return;
+      const t = State.tasks.find(x=>x.id===el.getAttribute('data-toggle-task'));
+      t.status = t.status==='Done' ? 'Open' : 'Done';
+      await persist('tasks', t.id, t);
+      render();
+    });
+  });
+
+  // weekly AI
+  document.getElementById('genWeeklyAI')?.addEventListener('click', async ()=>{
+    const out = document.getElementById('weeklyAiOutput');
+    out.innerHTML = `<div class="card"><span class="spinner"></span> Generating summary…</div>`;
+    const s = computeStats();
+    const q = `Write a factual weekly project summary for a construction document-control report. Use ONLY this data — do not invent anything: RFIs on file: ${s.rfis.length} (${s.rfis.map(r=>r.number+': '+r.status).join('; ')}). Submittals: ${s.submittals.length} (${s.submittals.map(r=>r.number+': '+r.status).join('; ')}). Procurement items: ${s.procurement.length}. Invoices: ${s.invoices.length}. Overdue items: ${s.overdueDocs.map(o=>o.number+' ('+o.type+')').join(', ')||'none'}. Structure it with headers: Key Developments, Items Requiring Attention, Next Week.`;
+    const text = await askAssistant(q);
+    out.innerHTML = `<div class="card">${formatAiText(text)}</div>`;
+  });
+
+  // email
+  document.getElementById('genUpdateEmail')?.addEventListener('click', ()=> generateDraftEmail('a professional weekly project documentation update email summarizing current document, submittal, RFI, procurement and invoice status, plus critical outstanding items'));
+  document.querySelectorAll('[data-draft-template]').forEach(el=>{
+    el.addEventListener('click', ()=> generateDraftEmail(`a professional "${el.getAttribute('data-draft-template')}" email based on the current project data`));
+  });
+
+  // search
+  document.getElementById('searchInput')?.addEventListener('input', e=>{
+    const q = e.target.value.trim().toLowerCase();
+    const results = document.getElementById('searchResults');
+    if(!q){ results.innerHTML=''; return; }
+    const matches = projDocs().filter(d=> JSON.stringify(d).toLowerCase().includes(q));
+    results.innerHTML = matches.length ? renderDocTable(matches) : `<p class="muted">No matches for "${esc(q)}".</p>`;
+    attachDocViewHandlers();
+  });
+
+  // assistant chat
+  document.getElementById('chatSend')?.addEventListener('click', sendChat);
+  document.getElementById('chatInput')?.addEventListener('keydown', e=>{ if(e.key==='Enter') sendChat(); });
+
+  // export/backup
+  document.getElementById('exportBackup')?.addEventListener('click', exportProjectBackup);
+  document.getElementById('importBackupFile')?.addEventListener('change', e=>{ if(!requireUnlock()) return; importProjectBackup(e.target.files[0]); });
+}
+
+function attachDocViewHandlers(){
+  document.querySelectorAll('[data-view-doc]').forEach(el=>{
+    el.addEventListener('click', ()=>{ const d = State.documents.find(x=>x.id===el.getAttribute('data-view-doc')); State.modal={type:'viewDoc',doc:d}; render(); });
+  });
+}
+
+// ================= BULK EXCEL IMPORT (Automatic File Update, §26-28) =================
+// Single centralized flow reused by all three modules: read → map columns → diff
+// against existing records (matched by number) → show counts → confirm → apply.
+// Never overwrites blindly; unchanged rows are left as-is; nothing is deleted.
+function hashStr(s){ let h=0; for(let i=0;i<s.length;i++){ h=(h*31+s.charCodeAt(i))|0; } return 'sig'+Math.abs(h); }
+function norm(s){ return (s||'').toString().toLowerCase().replace(/[^a-z0-9]+/g,''); }
+
+const FIELD_SYNONYMS = {
+  materialsubmittal: {
+    number:['msno','materialsubmittalno','submittalno','msnumber','no'], discipline:['discipline'],
+    specSection:['specsection','specificationsection','spec'], materialCategory:['materialcategory','category'],
+    subject:['materialdescription','description','desc','materialdesc'], manufacturer:['manufacturer','mfr'],
+    supplier:['supplier'], subcontractor:['subcontractor','subcon'], dateRequired:['daterequired'],
+    date:['datesubmitted','submitteddate'], revision:['revision','rev'], submittedBy:['submittedby'],
+    reviewer:['reviewer'], dueDate:['reviewdeadline','duedate','deadline'], dateReturned:['datereturned','returned'],
+    status:['status'], summary:['reviewcomments','comments','remarks'], relatedDrawing:['relateddrawingno','drawingno'],
+    relatedSpecification:['relatedspecification'], location:['location','area','locationarea'],
+    materialApprovalRef:['materialapprovalreference','approvalreference'],
+  },
+  shopdrawing: {
+    number:['sdno','shopdrawingsubmittalno','drawingsubmittalno','no'], discipline:['discipline'],
+    subject:['drawingtitle','title'], drawingType:['drawingtype'], subcontractor:['subcontractor'],
+    contractor:['contractor'], reviewer:['consultantreviewer','reviewer','consultant'],
+    date:['submissiondate','datesubmitted'], dueDate:['reviewdeadline','duedate'], revision:['revision','rev'],
+    previousRevision:['previousrevision'], status:['status'], dateReturned:['datereturned'],
+    summary:['reviewcomments','comments','remarks'], location:['location','area'],
+    relatedSpecification:['relatedspecification'], relatedMaterialSubmittal:['relatedmaterialsubmittal'],
+    relatedDrawing:['relateddrawingno','drawingno'],
+  },
+  rfi: {
+    number:['rfino','rfinumber','no'], discipline:['discipline'], subject:['subject'],
+    question:['questionclarification','question'], location:['locationarea','location'],
+    submittedBy:['submittedby'], contractor:['contractorsubcontractor','contractor'], date:['datesubmitted'],
+    dueDate:['requiredresponsedate','duedate'], reviewer:['reviewer'], status:['status'],
+    dateResponded:['dateresponded'], response:['response'], relatedDrawing:['relateddrawingno'],
+    relatedShopDrawing:['relatedshopdrawing'], relatedMaterialSubmittal:['relatedmaterialsubmittal'],
+    relatedSpecification:['relatedspecification'], priority:['priority'],
+  },
+};
+const FIELD_LABELS = {
+  materialsubmittal: {number:'Material Submittal No.', discipline:'Discipline', specSection:'Specification Section', materialCategory:'Material Category', subject:'Material Description', manufacturer:'Manufacturer', supplier:'Supplier', subcontractor:'Subcontractor', dateRequired:'Date Required', date:'Date Submitted', revision:'Revision', submittedBy:'Submitted By', reviewer:'Reviewer', dueDate:'Review Deadline', dateReturned:'Date Returned', status:'Status', summary:'Review Comments', relatedDrawing:'Related Drawing No.', relatedSpecification:'Related Specification', location:'Location / Area', materialApprovalRef:'Material Approval Reference'},
+  shopdrawing: {number:'Shop Drawing Submittal No.', discipline:'Discipline', subject:'Drawing Title', drawingType:'Drawing Type', subcontractor:'Subcontractor', contractor:'Contractor', reviewer:'Consultant / Reviewer', date:'Submission Date', dueDate:'Review Deadline', revision:'Revision', previousRevision:'Previous Revision', status:'Status', dateReturned:'Date Returned', summary:'Review Comments', location:'Location / Area', relatedSpecification:'Related Specification', relatedMaterialSubmittal:'Related Material Submittal', relatedDrawing:'Drawing No.'},
+  rfi: {number:'RFI No.', discipline:'Discipline', subject:'Subject', question:'Question / Clarification', location:'Location / Area', submittedBy:'Submitted By', contractor:'Contractor / Subcontractor', date:'Date Submitted', dueDate:'Required Response Date', reviewer:'Reviewer', status:'Status', dateResponded:'Date Responded', response:'Response', relatedDrawing:'Related Drawing No.', relatedShopDrawing:'Related Shop Drawing', relatedMaterialSubmittal:'Related Material Submittal', relatedSpecification:'Related Specification', priority:'Priority'},
+};
+
+function guessMappingFor(moduleKey, headers){
+  const syn = FIELD_SYNONYMS[moduleKey]; const mapping = {}; let score = 0;
+  headers.forEach(h=>{
+    const n = norm(h); let matched = null;
+    for(const [field, list] of Object.entries(syn)){ if(list.includes(n)){ matched = field; break; } }
+    mapping[h] = matched; if(matched) score++;
+  });
+  return {mapping, score};
+}
+async function guessMapping(headers){
+  const sig = hashStr(headers.slice().sort().join('|').toLowerCase());
+  if(dbApi){
+    try{
+      const saved = await dbApi.collection('importMappings').doc(sig).get();
+      const data = saved && (saved.data || saved);
+      if(data && data.mapping && data.moduleKey) return {moduleKey:data.moduleKey, mapping:data.mapping, sig};
+    }catch(e){ /* no saved mapping for this header signature yet */ }
+  }
+  let best = {moduleKey:'materialsubmittal', score:-1, mapping:{}};
+  Object.keys(FIELD_SYNONYMS).forEach(mk=>{
+    const {mapping, score} = guessMappingFor(mk, headers);
+    if(score > best.score) best = {moduleKey:mk, score, mapping};
+  });
+  return {moduleKey:best.moduleKey, mapping:best.mapping, sig};
+}
+
+async function tryBulkExcelImport(file){
+  const name = file.name.toLowerCase();
+  if(!(name.endsWith('.xlsx') || name.endsWith('.xls'))) return false;
+  try{
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, {type:'array'});
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, {defval:''});
+    if(rows.length < 2) return false; // a single-row file is treated as one document, not a register
+    const headers = Object.keys(rows[0]);
+    const {moduleKey, mapping, sig} = await guessMapping(headers);
+    State.modal = {type:'importMapping', fileName:file.name, headers, rows, moduleKey, mapping, sig};
+    render();
+    return true;
+  }catch(e){ console.warn('bulk excel detection failed', e); return false; }
+}
+
+function computeImportDiff(moduleKey, rows, mapping){
+  const cfg = MODULE_CONFIG[moduleKey];
+  const existing = State.documents.filter(d=>d.projectId===State.activeProjectId && cfg.types.includes(d.type));
+  const processed = [];
+  const seen = new Set(); const dups = new Set();
+  rows.forEach(row=>{
+    const rec = {};
+    Object.entries(mapping).forEach(([h,f])=>{ if(f) rec[f] = row[h]!==undefined ? String(row[h]).trim() : ''; });
+    if(!rec.discipline) rec.discipline = disciplineFromText(rec.number) || disciplineFromText(rec.subject) || null;
+    if(rec.number){ if(seen.has(rec.number)) dups.add(rec.number); seen.add(rec.number); }
+    processed.push(rec);
+  });
+  let newCount=0, updatedCount=0, revisionCount=0, unchangedCount=0;
+  const actions = [];
+  processed.forEach(rec=>{
+    if(!rec.number){ actions.push({rec, action:'new'}); newCount++; return; }
+    const match = existing.find(x=>x.number===rec.number && x.status!=='Superseded');
+    if(!match){ actions.push({rec, action:'new'}); newCount++; return; }
+    if(rec.revision && match.revision && rec.revision!==match.revision){
+      actions.push({rec, action:'revision', matchId:match.id, previousRevision:match.revision}); revisionCount++; return;
+    }
+    const changed = Object.keys(rec).some(k=> (rec[k]||'') !== (match[k]||''));
+    if(changed){ actions.push({rec, action:'update', matchId:match.id}); updatedCount++; }
+    else unchangedCount++;
+  });
+  return {actions, newCount, updatedCount, revisionCount, unchangedCount, duplicateCount:dups.size, total:processed.length};
+}
+
+async function generateChangeSummary(moduleTitle, diff, actions){
+  const revLines = actions.filter(a=>a.action==='revision').map(a=>`${a.rec.number} revised${a.rec.revision?(' to '+a.rec.revision):''}`);
+  const statusChanges = actions.filter(a=>a.action==='update' && a.rec.status).map(a=>`${a.rec.number} status set to ${a.rec.status}`);
+  const fallback = `${diff.newCount} new ${moduleTitle} record(s) were added. ${diff.updatedCount} were updated. ${diff.revisionCount} revision(s) were received.${diff.duplicateCount?` ${diff.duplicateCount} potential duplicate number(s) were flagged in the file.`:''}`;
+  if(!sampleApi) return fallback;
+  const facts = `Module: ${moduleTitle}. New: ${diff.newCount}. Updated: ${diff.updatedCount}. Revisions: ${diff.revisionCount}. Unchanged: ${diff.unchangedCount}. Potential duplicates: ${diff.duplicateCount}. Revision details: ${revLines.join('; ')||'none'}. Status changes: ${statusChanges.join('; ')||'none'}.`;
+  try{
+    const res = await sampleApi(`You are a construction document-control assistant. Using ONLY the facts below — never invent a number, discipline or status not listed — write a 2-4 sentence factual summary of what changed in this import, for a document controller's activity log.\nFACTS: ${facts}`, {modelTier:'quick'});
+    return res.text;
+  }catch(e){ return fallback; }
+}
+
+async function applyBulkImport(state){
+  const {moduleKey, diff} = state;
+  const cfg = MODULE_CONFIG[moduleKey];
+  for(const a of diff.actions){
+    if(a.action==='new'){
+      const doc = {id:uid(), projectId:State.activeProjectId, type:cfg.types[0], status:'Submitted', createdAt:new Date().toISOString(), ...a.rec};
+      State.documents.push(doc); await persist('documents', doc.id, doc);
+    } else if(a.action==='update'){
+      const doc = State.documents.find(x=>x.id===a.matchId);
+      if(doc){ Object.assign(doc, a.rec); await persist('documents', doc.id, doc); }
+    } else if(a.action==='revision'){
+      const old = State.documents.find(x=>x.id===a.matchId);
+      if(old){ old.status='Superseded'; await persist('documents', old.id, old); }
+      const doc = {id:uid(), projectId:State.activeProjectId, type:cfg.types[0], status:'Submitted', createdAt:new Date().toISOString(), previousRevision:a.previousRevision, ...a.rec};
+      State.documents.push(doc); await persist('documents', doc.id, doc);
+    }
+  }
+  await logActivity(State.activeProjectId, `${state.fileName} imported into ${cfg.title}: ${diff.newCount} new, ${diff.updatedCount} updated, ${diff.revisionCount} revision change(s), ${diff.unchangedCount} unchanged.`);
+  if(dbApi && state.sig){
+    try{ await dbApi.collection('importMappings').doc(state.sig).set({moduleKey, mapping:state.mapping}); }catch(e){}
+  }
+  const summary = await generateChangeSummary(cfg.title, diff, diff.actions);
+  State.modal = {type:'bulkImportDone', summary, diff, title:cfg.title};
+  render();
+}
+
+async function handleFiles(fileList){
+  const files = Array.from(fileList);
+  const statusEl = document.getElementById('uploadStatus');
+  for(const file of files){
+    statusEl.innerHTML = `<div class="card" style="margin-bottom:10px;"><span class="spinner"></span> Reading ${esc(file.name)}…</div>`;
+    const bulkHandled = await tryBulkExcelImport(file);
+    if(bulkHandled){ statusEl.innerHTML=''; return; }
+    const text = await extractTextFromFile(file);
+    statusEl.innerHTML = `<div class="card" style="margin-bottom:10px;"><span class="spinner"></span> AI is classifying ${esc(file.name)}…</div>`;
+    let assetId = null;
+    if(assetsApi){
+      try{ const uploaded = await assetsApi.upload(file); assetId = uploaded.id; }catch(e){ console.warn('asset upload failed', e); }
+    }
+    const ai = await classifyDocument(file.name, text);
+    statusEl.innerHTML = '';
+    const draft = {
+      id: uid(), fileName: file.name, assetId,
+      type: ai?.type || 'Other', number: ai?.number || '', subject: ai?.subject || file.name,
+      date: ai?.date || new Date().toISOString(), relatedDrawing: ai?.relatedDrawing || '',
+      submittedBy: ai?.submittedBy || '', status: ai?.status || 'Submitted',
+      dueDate: ai?.dueDate || null, revision: ai?.revision || '', summary: ai?.summary || (ai ? '' : 'AI classification unavailable — please fill in the fields manually.'),
+      discipline: ai?.discipline || '', specSection: ai?.specSection || '', materialCategory: ai?.materialCategory || '',
+      manufacturer: ai?.manufacturer || '', supplier: ai?.supplier || '', subcontractor: ai?.subcontractor || '',
+      contractor: ai?.contractor || '', reviewer: ai?.reviewer || '', drawingType: ai?.drawingType || '',
+      location: ai?.location || '', relatedSpecification: ai?.relatedSpecification || '',
+      relatedMaterialSubmittal: ai?.relatedMaterialSubmittal || '', relatedShopDrawing: ai?.relatedShopDrawing || '',
+      priority: ai?.priority || '', question: ai?.question || '',
+    };
+    // detect a new revision of an existing record so the preview can flag it up front
+    if(draft.number && (draft.type==='Material Submittal' || draft.type==='Shop Drawing Submittal')){
+      const prior = State.documents.filter(x=>x.projectId===State.activeProjectId && x.type===draft.type && x.number===draft.number);
+      if(prior.length){
+        const latest = prior.slice().sort((a,b)=> (b.revision||'').localeCompare(a.revision||''))[0];
+        draft.previousRevision = latest.revision || '';
+        draft.isRevisionUpdate = true;
+      }
+    }
+    State.modal = {type:'reviewDoc', data: draft};
+    render();
+    return; // handle one at a time so each gets its own review screen
+  }
+}
+
+async function sendChat(){
+  const input = document.getElementById('chatInput');
+  const q = input.value.trim();
+  if(!q) return;
+  input.value='';
+  if(!State.chatLog) State.chatLog=[];
+  State.chatLog.push({role:'user', text:q});
+  State.chatBusy = true;
+  render();
+  const answer = await askAssistant(q);
+  State.chatLog.push({role:'ai', text:answer});
+  State.chatBusy = false;
+  render();
+  const log = document.getElementById('chatLog');
+  if(log) log.scrollTop = log.scrollHeight;
+}
+
+async function generateDraftEmail(instruction){
+  const out = document.getElementById('emailDraftOutput');
+  out.innerHTML = `<div class="card"><span class="spinner"></span> Drafting…</div>`;
+  const text = await askAssistant(`Draft ${instruction}. Sign off as ${activeProject()?.docController || 'the Document Controller'}.`);
+  out.innerHTML = `<div class="card"><h4>Draft (review before sending)</h4><div style="white-space:pre-wrap;font-size:13px;">${esc(text)}</div>
+    <p class="limits-note">This is a draft only — copy it into your mail client. Live send requires connecting a real email account via OAuth, which isn't available in this build.</p>
+  </div>`;
+}
+
+function exportRegisterExcel(title){
+  let docs;
+  const map = {'RFI Register':'RFI','Submittal Register':'Material Submittal','Invoice Register':'Invoice'};
+  if(title==='All Documents' || title==='Document Register') docs = projDocs();
+  else if(title==='Procurement Register') docs = projDocs().filter(d=>['Purchase Order','LPO','Quotation'].includes(d.type));
+  else docs = projDocs().filter(d=>d.type===map[title]);
+  if(!docs || !docs.length){ toast('Nothing to export yet'); return; }
+  const rows = docs.map(d=>({Number:d.number,Type:d.type,Subject:d.subject,Date:fmtDate(d.date),Status:d.status,'Related Drawing':d.relatedDrawing,'Submitted By':d.submittedBy,'Due Date':d.dueDate?fmtDate(d.dueDate):'',Revision:d.revision||''}));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, title.slice(0,31));
+  const out = XLSX.write(wb, {type:'array', bookType:'xlsx'});
+  downloadBlob(new Blob([out],{type:'application/octet-stream'}), title.replace(/\s+/g,'_')+'.xlsx');
+}
+
+async function exportProjectBackup(){
+  const proj = activeProject();
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    project: proj,
+    documents: projDocs(),
+    tasks: projTasks(),
+    activity: projActivity(),
+  };
+  const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
+  downloadBlob(blob, (proj.number||proj.name).replace(/\s+/g,'_')+'_backup.json');
+}
+
+async function importProjectBackup(file){
+  if(!file) return;
+  try{
+    const text = await file.text();
+    const payload = JSON.parse(text);
+    const newProjId = uid();
+    const p = {...payload.project, id:newProjId, name:(payload.project.name||'Imported Project')+' (Imported)'};
+    State.projects.push(p); await persist('projects', newProjId, p);
+    for(const d of (payload.documents||[])){
+      const nd = {...d, id:uid(), projectId:newProjId}; State.documents.push(nd); await persist('documents', nd.id, nd);
+    }
+    for(const t of (payload.tasks||[])){
+      const nt = {...t, id:uid(), projectId:newProjId}; State.tasks.push(nt); await persist('tasks', nt.id, nt);
+    }
+    for(const a of (payload.activity||[])){
+      const na = {...a, id:uid(), projectId:newProjId}; State.activity.push(na); await persist('activity', na.id, na);
+    }
+    State.activeProjectId = newProjId;
+    toast('Project imported');
+    render();
+  }catch(e){
+    toast('Import failed: '+e.message);
+  }
+}
+
+async function downloadBlob(blob, filename){
+  if(downloadsApi){
+    try{
+      const buf = await blob.arrayBuffer();
+      await downloadsApi.save({filename, data: buf});
+      return;
+    }catch(e){ console.warn('downloads capability failed, falling back', e); }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// ================= INIT =================
+(async function init(){
+  await initCaps();
+  await loadAll();
+})();
+</script>
+</body>
+</html>
