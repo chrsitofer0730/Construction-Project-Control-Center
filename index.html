@@ -10,6 +10,11 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.7.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <style>
 :root{
   --ink:#221F1F; --ink-soft:#4a4746; --paper:#FFFFFF; --canvas:#F6F5F3;
@@ -176,22 +181,13 @@ function toast(msg){
 }
 
 // ---------- edit-lock: password hashing (client-side only — see Settings > Security for limitations) ----------
-async function sha256Hex(text){
-  const enc = new TextEncoder().encode(text);
-  const buf = await crypto.subtle.digest('SHA-256', enc);
-  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
-}
-function randomHex(len){
-  const arr = new Uint8Array(len); crypto.getRandomValues(arr);
-  return Array.from(arr).map(b=>b.toString(16).padStart(2,'0')).join('');
-}
-async function hashPassword(pw, salt){ return sha256Hex('cvpc::'+salt+'::'+pw); }
-
 // Call before any mutating action. Returns true if editing is already unlocked;
-// otherwise opens the unlock (or first-time set-password) modal and returns false.
+// otherwise opens the real sign-in modal and returns false. Always false in
+// client view mode — clients never get an edit prompt at all.
 function requireUnlock(){
+  if(State.clientMode) return false;
   if(State.unlocked) return true;
-  State.modal = { type: State.security ? 'unlock' : 'setPassword' };
+  State.modal = { type: 'unlock' };
   render();
   return false;
 }
@@ -199,45 +195,50 @@ function lockApp(){
   State.unlocked = false;
   State.editingCell = null;
   State.modal = null;
+  if(fbAuth) fbAuth.signOut().catch(()=>{});
   toast('Editing locked');
   render();
 }
 
 // ---------- capability handles ----------
-// Standalone build: data persistence runs on localStorage in this browser.
-// AI classification/summaries and cloud asset upload are not available outside
-// the Claude artifact viewer, so those two stay null — the app already falls
-// back gracefully wherever they're used (manual classification, plain <a download>).
+// Standalone build: data persists in Firebase Firestore so both you and
+// any client visiting the link see the same live project data. Only a
+// signed-in admin (you) can write — enforced by Firestore's own security
+// rules, not just hidden buttons. AI classification/summaries and cloud
+// asset upload aren't available outside the Claude artifact viewer, so
+// those two stay null — the app already falls back gracefully wherever
+// they're used (manual classification, plain <a download>).
 let dbApi=null, assetsApi=null, sampleApi=null, downloadsApi=null;
+let fbAuth=null;
 
-function makeLocalDb(){
-  const KEY = 'cva_local_db_v1';
-  function readAll(){ try{ return JSON.parse(localStorage.getItem(KEY)) || {}; }catch(e){ return {}; } }
-  function writeAll(all){ try{ localStorage.setItem(KEY, JSON.stringify(all)); }catch(e){ console.warn('localStorage save failed', e); } }
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyD8RwhVLfcH7a9r7eXytPBNJZwEqaeeUJM",
+  authDomain: "project-control-center-8888.firebaseapp.com",
+  projectId: "project-control-center-8888",
+  storageBucket: "project-control-center-8888.firebasestorage.app",
+  messagingSenderId: "624990846175",
+  appId: "1:624990846175:web:90fa662eed467e6be2fd6a"
+};
+
+function makeFirestoreDb(){
+  const db = firebase.firestore();
   return {
     collection(name){
+      const col = db.collection(name);
       return {
         async get(){
-          const coll = readAll()[name] || {};
-          return Object.keys(coll).map(id => ({ id, data: coll[id] }));
+          const snap = await col.get();
+          return snap.docs.map(d => ({ id: d.id, data: d.data() }));
         },
         doc(id){
+          const ref = col.doc(id);
           return {
             async get(){
-              const coll = readAll()[name] || {};
-              return coll[id] !== undefined ? { id, data: coll[id] } : null;
+              const snap = await ref.get();
+              return snap.exists ? { id, data: snap.data() } : null;
             },
-            async set(data){
-              const all = readAll();
-              all[name] = all[name] || {};
-              all[name][id] = data;
-              writeAll(all);
-            },
-            async delete(){
-              const all = readAll();
-              if(all[name]) delete all[name][id];
-              writeAll(all);
-            }
+            async set(data){ await ref.set(data); },
+            async delete(){ await ref.delete(); }
           };
         }
       };
@@ -246,7 +247,20 @@ function makeLocalDb(){
 }
 
 async function initCaps(){
-  dbApi = makeLocalDb();
+  try{
+    firebase.initializeApp(FIREBASE_CONFIG);
+    dbApi = makeFirestoreDb();
+    fbAuth = firebase.auth();
+    // Keep State.unlocked in sync with real Firebase Auth sign-in state,
+    // so a signed-in admin stays unlocked across reloads on their own device.
+    fbAuth.onAuthStateChanged(user => {
+      State.unlocked = !!user && !State.clientMode;
+      render();
+    });
+  }catch(e){
+    console.warn('Firebase init failed — check your firebaseConfig / network', e);
+    dbApi = null;
+  }
 }
 
 // ---------- in-memory cache mirrors of db collections ----------
@@ -256,9 +270,11 @@ const State = {
   moduleFilters: { materialsubmittal:{discipline:'ALL',search:''}, shopdrawing:{discipline:'ALL',search:''}, rfi:{discipline:'ALL',search:''} },
   dashboardDiscipline: 'ALL',
   // ---- editing security & inline cell editing ----
-  unlocked:false,       // true once the correct password has been entered this session
-  security:null,        // {hash,salt,updatedAt} loaded from db (settings/security); null = no password set yet
+  unlocked:false,       // true once signed in with the admin Firebase account this session
   editingCell:null,      // {docId, field} — which single cell is currently in edit mode
+  // Client view: permanently read-only, no edit/upload/settings UI. Set once at
+  // load time from ?client=1 in the URL — this is the link you hand to clients.
+  clientMode: new URLSearchParams(window.location.search).get('client') === '1',
 };
 
 const DEMO_ID = 'demo-project';
@@ -315,13 +331,8 @@ async function loadAll(){
       State.tasks = (t||[]).map(x=>x.data ? {...x.data,id:x.id} : x);
       State.activity = (a||[]).map(x=>x.data ? {...x.data,id:x.id} : x);
     }catch(e){ console.warn('db load failed, falling back to demo-only view', e); }
-    try{
-      const secSnap = await dbApi.collection('settings').doc('security').get();
-      const secData = secSnap ? (typeof secSnap.data==='function' ? secSnap.data() : secSnap.data) : null;
-      if(secData && secData.hash && secData.salt) State.security = secData;
-    }catch(e){ /* no password set yet, or db unavailable — stays locked-but-unset */ }
   }
-  if(State.projects.filter(p=>p.id!==DEMO_ID).length===0 && State.projects.length===0){
+  if(!State.clientMode && State.projects.filter(p=>p.id!==DEMO_ID).length===0 && State.projects.length===0){
     buildDemoData();
     State.demoMode = true;
   } else if(!State.projects.find(p=>p.id===DEMO_ID)){
@@ -524,22 +535,28 @@ function render(){
 
 function renderSidebar(){
   const proj = activeProject();
-  const nav = [
+  let nav = [
     {group:'Overview', items:[['dashboard','Dashboard'],['projects','Projects']]},
     {group:'Document Intelligence', items:[['upload','Upload & Classify'],['documents','All Documents'],['submittals','Material Submittal'],['drawings','Shop Drawing Submittal'],['rfis','RFI'],['procurement','Procurement'],['invoices','Invoices']]},
     {group:'Operations', items:[['tasks','Tasks'],['daily','Daily Update'],['weekly','Weekly Summary'],['email','Email Center'],['activity','Activity Log']]},
     {group:'Tools', items:[['search','Search'],['assistant','AI Assistant'],['export','Export / Backup'],['settings','Settings']]},
   ];
+  if(State.clientMode){
+    // Client view: no upload, no AI assistant, no email drafting, no settings —
+    // just the registers, search, and export/download.
+    nav = nav.map(g=>({...g, items: g.items.filter(([r])=> !['upload','assistant','email','settings'].includes(r))}))
+             .filter(g=>g.items.length);
+  }
   return `
   <div class="sidebar">
     <div class="brand">
       <div class="brand-mark"></div>
       <div class="brand-text">Construction VA<span>Project Control Center</span></div>
     </div>
-    <div class="lock-bar ${State.unlocked?'is-unlocked':''}">
+    ${State.clientMode ? `<div class="lock-bar"><span class="lock-status">👁️ Client view (read-only)</span></div>` : `<div class="lock-bar ${State.unlocked?'is-unlocked':''}">
       <span class="lock-status">${State.unlocked?'🔓 Editing unlocked':'🔒 Locked (view only)'}</span>
       <button class="btn ghost lock-btn" id="${State.unlocked?'lockBtn':'unlockBtn'}">${State.unlocked?'Lock':'Unlock'}</button>
-    </div>
+    </div>`}
     <div class="proj-picker">
       <select id="projectSelect">
         ${State.projects.map(p=>`<option value="${p.id}" ${p.id===State.activeProjectId?'selected':''}>${esc(p.name)}${p.id===DEMO_ID?' (Demo)':''}</option>`).join('')}
@@ -822,8 +839,9 @@ function renderRegister(typeOrTypes, title, sub, showRevisionCol){
   const statusOptions = REGISTER_STATUS_OPTIONS[title];
   const addType = REGISTER_ADD_TYPE[title];
   const actions = `<button class="btn" data-export-register="${esc(title)}">Export Excel</button> ` +
-    (addType ? `<button class="btn" data-add-row-type="${esc(addType)}">+ Add Row</button> ` : '') +
-    `<button class="btn primary" data-route="upload">+ Upload</button>`;
+    `<button class="btn" data-export-register-pdf="${esc(title)}">Download PDF</button> ` +
+    (State.clientMode ? '' : (addType ? `<button class="btn" data-add-row-type="${esc(addType)}">+ Add Row</button> ` : '') +
+    `<button class="btn primary" data-route="upload">+ Upload</button>`);
   return pageHead(title, sub, actions) +
   (docs.length ? renderDocTable(docs, showRevisionCol, editable, statusOptions) : `<div class="empty"><h3>No records yet</h3><p>Upload a document of this type${addType?', or add a row directly,':''} to populate the register.</p></div>`);
 }
@@ -927,9 +945,24 @@ function renderDisciplineModule(moduleKey){
     <div class="btn-row"><button class="btn ghost" data-module-clear="${moduleKey}">Clear Filters</button></div>
   </div>`;
   return pageHead(cfg.title, cfg.sub,
-      `<button class="btn" data-export-module="${moduleKey}">Export Excel</button> <button class="btn" data-add-row-type="${esc(cfg.types[0])}">+ Add Row</button> <button class="btn primary" data-route="upload">+ Upload ${esc(cfg.title)}</button>`) +
+      `<button class="btn" data-export-module="${moduleKey}">Export Excel</button> ` +
+      `<button class="btn" data-export-module-pdf="${moduleKey}">Download PDF</button> ` +
+      (State.clientMode ? '' : `<button class="btn" data-add-row-type="${esc(cfg.types[0])}">+ Add Row</button> <button class="btn primary" data-route="upload">+ Upload ${esc(cfg.title)}</button>`)) +
     tabsHtml + filterControls +
     (docs.length ? renderModuleTable(docs, cfg.columns, moduleKey) : `<div class="empty"><h3>No records match these filters</h3><p>Adjust the filters above, or upload a document to populate this register, or use + Add Row to start one manually.</p></div>`);
+}
+
+function exportRowsToPDF(rows, title){
+  if(!rows || !rows.length){ toast('Nothing to export yet'); return; }
+  if(!window.jspdf){ toast('PDF export unavailable right now'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape' });
+  const headers = Object.keys(rows[0]);
+  const body = rows.map(r => headers.map(h => r[h] ?? ''));
+  doc.setFontSize(14);
+  doc.text(title, 14, 15);
+  doc.autoTable({ head: [headers], body, startY: 20, styles: { fontSize: 8 }, headStyles: { fillColor: [34,31,31] } });
+  doc.save(title.replace(/\s+/g,'_') + '.pdf');
 }
 
 function exportModuleExcel(moduleKey){
@@ -946,6 +979,18 @@ function exportModuleExcel(moduleKey){
   XLSX.utils.book_append_sheet(wb, ws, sheetTitle.slice(0,31));
   const out = XLSX.write(wb, {type:'array', bookType:'xlsx'});
   downloadBlob(new Blob([out],{type:'application/octet-stream'}), sheetTitle.replace(/\s+/g,'_')+'.xlsx');
+}
+
+function exportModulePDF(moduleKey){
+  const {docs, f, cfg} = moduleFilteredDocs(moduleKey);
+  if(!docs.length){ toast('Nothing to export for this view'); return; }
+  const rows = docs.map(d=>{
+    const row={};
+    cfg.columns.forEach(c=>{ row[c.label] = c.fmt==='date' ? fmtDate(d[c.key]) : (d[c.key]||''); });
+    return row;
+  });
+  const sheetTitle = ((f.discipline&&f.discipline!=='ALL') ? f.discipline+' ' : 'All ')+cfg.title;
+  exportRowsToPDF(rows, sheetTitle);
 }
 
 function renderTasks(){
@@ -1062,35 +1107,42 @@ function formatAiText(t){ return esc(t).replace(/\n/g,'<br>'); }
 
 function renderExport(){
   const proj = activeProject();
-  return pageHead('Export / Backup', 'Export registers as Excel, or back up this entire project as JSON you can re-import later.') +
+  return pageHead('Export / Backup', 'Download registers as Excel or PDF.') +
   `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));">
-    <div class="card"><h4>Document Register</h4><p class="muted">All documents, all types.</p><button class="btn" data-export-register="All Documents">Export Excel</button></div>
-    <div class="card"><h4>Material Submittal</h4><p class="muted">Exports the currently selected discipline tab &amp; filters from the Material Submittal page (open it first to choose ALL or one discipline).</p><button class="btn" data-export-module="materialsubmittal">Export Excel</button></div>
-    <div class="card"><h4>Shop Drawing Submittal</h4><p class="muted">Same idea — respects the discipline tab left open on that page.</p><button class="btn" data-export-module="shopdrawing">Export Excel</button></div>
-    <div class="card"><h4>RFI</h4><p class="muted">Same idea — respects the discipline tab left open on that page.</p><button class="btn" data-export-module="rfi">Export Excel</button></div>
-    <div class="card"><h4>Procurement Register</h4><button class="btn" data-export-register="Procurement Register">Export Excel</button></div>
-    <div class="card"><h4>Invoice Register</h4><button class="btn" data-export-register="Invoice Register">Export Excel</button></div>
-    <div class="card"><h4>Full Project Backup</h4><p class="muted">JSON file with all documents, tasks and activity for ${esc(proj?proj.name:'this project')}.</p><button class="btn primary" id="exportBackup">Export Project JSON</button></div>
-    <div class="card"><h4>Import Project Backup</h4><input type="file" id="importBackupFile" accept=".json" style="font-size:12px;"></div>
+    <div class="card"><h4>Document Register</h4><p class="muted">All documents, all types.</p><button class="btn" data-export-register="All Documents">Export Excel</button> <button class="btn" data-export-register-pdf="All Documents">Download PDF</button></div>
+    <div class="card"><h4>Material Submittal</h4><p class="muted">Exports the currently selected discipline tab &amp; filters from the Material Submittal page (open it first to choose ALL or one discipline).</p><button class="btn" data-export-module="materialsubmittal">Export Excel</button> <button class="btn" data-export-module-pdf="materialsubmittal">Download PDF</button></div>
+    <div class="card"><h4>Shop Drawing Submittal</h4><p class="muted">Same idea — respects the discipline tab left open on that page.</p><button class="btn" data-export-module="shopdrawing">Export Excel</button> <button class="btn" data-export-module-pdf="shopdrawing">Download PDF</button></div>
+    <div class="card"><h4>RFI</h4><p class="muted">Same idea — respects the discipline tab left open on that page.</p><button class="btn" data-export-module="rfi">Export Excel</button> <button class="btn" data-export-module-pdf="rfi">Download PDF</button></div>
+    <div class="card"><h4>Procurement Register</h4><button class="btn" data-export-register="Procurement Register">Export Excel</button> <button class="btn" data-export-register-pdf="Procurement Register">Download PDF</button></div>
+    <div class="card"><h4>Invoice Register</h4><button class="btn" data-export-register="Invoice Register">Export Excel</button> <button class="btn" data-export-register-pdf="Invoice Register">Download PDF</button></div>
+    ${State.clientMode ? '' : `<div class="card"><h4>Full Project Backup</h4><p class="muted">JSON file with all documents, tasks and activity for ${esc(proj?proj.name:'this project')}.</p><button class="btn primary" id="exportBackup">Export Project JSON</button></div>
+    <div class="card"><h4>Import Project Backup</h4><input type="file" id="importBackupFile" accept=".json" style="font-size:12px;"></div>`}
   </div>`;
 }
 
 function renderSettings(){
   const proj = activeProject();
+  const clientUrl = window.location.origin + window.location.pathname + '?client=1';
   return pageHead('Settings') +
-  `<div class="section-title">Security</div>
+  (State.clientMode ? '' : `<div class="section-title">Security</div>
   <div class="card">
-    <h3>Edit password</h3>
-    <p class="muted">${State.security ? `Editing is currently <b>${State.unlocked?'unlocked':'locked'}</b> in this session. Anyone can view the project; only whoever knows the password can add, edit or delete records.` : 'No edit password has been set yet — the app will ask you to create one the first time you try to edit anything.'}</p>
+    <h3>Admin sign-in</h3>
+    <p class="muted">Editing is currently <b>${State.unlocked?'unlocked':'locked'}</b> in this session. Anyone can view the project; only your admin account (managed in Firebase, not stored on this page) can add, edit or delete records.</p>
     <div class="btn-row">
-      ${State.security ? `<button class="btn" id="changePasswordBtn">Change Password</button>` : ''}
       ${State.unlocked ? `<button class="btn ghost" id="settingsLockBtn">Lock Now</button>` : `<button class="btn primary" id="settingsUnlockBtn">Unlock</button>`}
     </div>
     <div class="security-note">
-      <b>Limitations to be aware of:</b> this is a password gate built into the page itself, not a server-enforced permission. It stops casual editing by anyone who opens the app without the password, but it cannot fully stop someone who is determined and technically able to inspect or modify the page's code or its stored data directly — there is no backend authentication layer here. Only your organization's own sharing/permission settings for this artifact are a real security boundary; this password is a convenience layer on top of that, not a replacement for it.
+      This is enforced by real sign-in and by the database's own access rules — not just by hiding buttons on the page. To add another admin, or reset your password, use the Firebase console (Authentication &gt; Users) for this project.
     </div>
   </div>
-  <div class="section-title">About this build</div>
+  <div class="section-title">Client-only link</div>
+  <div class="card">
+    <h3>Share a read-only, download-only view</h3>
+    <p class="muted">Anyone who opens this link sees the current project data with no edit, upload or settings controls at all — only tables and Download Excel / Download PDF buttons.</p>
+    <div class="field"><label>Client link</label><input type="text" readonly value="${esc(clientUrl)}" id="clientLinkInput" onclick="this.select()"></div>
+    <button class="btn" id="copyClientLinkBtn">Copy Link</button>
+  </div>`) +
+  `<div class="section-title">About this build</div>
   <div class="card">
     <h3>About this build</h3>
     <p class="muted">Projects, documents, registers, tasks and activity are stored in a real persistent database tied to your account — not your browser — so they'll be here next time you open this page, on any device.</p>
@@ -1125,8 +1177,6 @@ function renderModal(){
   if(m.type==='viewDoc') return viewDocModal(m.doc);
   if(m.type==='newTask') return newTaskModal();
   if(m.type==='unlock') return unlockModal();
-  if(m.type==='setPassword') return setPasswordModal();
-  if(m.type==='changePassword') return changePasswordModal();
   if(m.type==='confirmDelete') return confirmDeleteModal(m);
   if(m.type==='emailDraft') return null; // rendered inline, not modal
   return '';
@@ -1134,40 +1184,17 @@ function renderModal(){
 
 function unlockModal(){
   return `<div class="modal-bg" id="modalBg"><div class="modal" style="max-width:380px;">
-    <h2>Unlock Editing</h2>
-    <p class="muted" style="margin-top:0;">Enter your password to edit project data and settings. Viewing stays available either way.</p>
+    <h2>Sign In to Edit</h2>
+    <p class="muted" style="margin-top:0;">Sign in with your admin account to add, edit or delete project data. Viewing stays available to anyone with the link either way.</p>
+    <div class="field"><label>Email</label><input type="email" id="unlockEmail" autocomplete="username"></div>
     <div class="field"><label>Password</label><input type="password" id="unlockPw" autocomplete="current-password"></div>
-    <p id="unlockErr" class="muted" style="color:var(--warn);display:none;">Incorrect password.</p>
-    <div class="btn-row" style="justify-content:flex-end;">
-      <button class="btn ghost" id="modalCancel">Cancel</button>
-      <button class="btn primary" id="submitUnlock">Unlock</button>
-    </div>
-  </div></div>`;
-}
-
-function setPasswordModal(){
-  return `<div class="modal-bg" id="modalBg"><div class="modal" style="max-width:420px;">
-    <h2>Set an Edit Password</h2>
-    <p class="muted" style="margin-top:0;">No password has been set yet. Choose one now — only whoever enters it can add, edit or delete project data. You can change it later from Settings.</p>
-    <div class="field"><label>New password</label><input type="password" id="newPw1" autocomplete="new-password"></div>
-    <div class="field"><label>Confirm password</label><input type="password" id="newPw2" autocomplete="new-password"></div>
-    <p class="limits-note" style="border-top:none;padding-top:0;">This is client-side protection only — see Settings &gt; Security for what that does and doesn't guard against.</p>
-    <div class="btn-row" style="justify-content:flex-end;">
-      <button class="btn ghost" id="modalCancel">Cancel</button>
-      <button class="btn primary" id="submitSetPassword">Set Password &amp; Unlock</button>
-    </div>
-  </div></div>`;
-}
-
-function changePasswordModal(){
-  return `<div class="modal-bg" id="modalBg"><div class="modal" style="max-width:420px;">
-    <h2>Change Edit Password</h2>
-    <div class="field"><label>Current password</label><input type="password" id="curPw" autocomplete="current-password"></div>
-    <div class="field"><label>New password</label><input type="password" id="cNewPw1" autocomplete="new-password"></div>
-    <div class="field"><label>Confirm new password</label><input type="password" id="cNewPw2" autocomplete="new-password"></div>
-    <div class="btn-row" style="justify-content:flex-end;">
-      <button class="btn ghost" id="modalCancel">Cancel</button>
-      <button class="btn primary" id="submitChangePassword">Update Password</button>
+    <p id="unlockErr" class="muted" style="color:var(--warn);display:none;">Incorrect email or password.</p>
+    <div class="btn-row" style="justify-content:space-between;">
+      <button class="btn ghost" id="forgotPwBtn" style="font-size:12px;">Forgot password?</button>
+      <div class="btn-row" style="justify-content:flex-end;">
+        <button class="btn ghost" id="modalCancel">Cancel</button>
+        <button class="btn primary" id="submitUnlock">Sign In</button>
+      </div>
     </div>
   </div></div>`;
 }
@@ -1479,48 +1506,32 @@ function attachHandlers(){
 
   document.getElementById('unlockPw')?.addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('submitUnlock')?.click(); });
   document.getElementById('submitUnlock')?.addEventListener('click', async ()=>{
+    const email = document.getElementById('unlockEmail').value || '';
     const pw = document.getElementById('unlockPw').value || '';
-    const hash = await hashPassword(pw, State.security.salt);
-    if(hash === State.security.hash){
+    if(!fbAuth){ toast('Sign-in is unavailable right now — check your connection'); return; }
+    try{
+      await fbAuth.signInWithEmailAndPassword(email, pw);
       State.unlocked = true; State.modal = null; toast('Editing unlocked'); render();
-    } else {
+    }catch(e){
       const err = document.getElementById('unlockErr'); if(err) err.style.display = 'block';
       const pwEl = document.getElementById('unlockPw'); if(pwEl){ pwEl.value=''; pwEl.focus(); }
     }
   });
-
-  document.getElementById('submitSetPassword')?.addEventListener('click', async ()=>{
-    const p1 = document.getElementById('newPw1').value || '', p2 = document.getElementById('newPw2').value || '';
-    if(p1.length < 4){ toast('Password must be at least 4 characters'); return; }
-    if(p1 !== p2){ toast('Passwords do not match'); return; }
-    const salt = randomHex(16);
-    const hash = await hashPassword(p1, salt);
-    const data = { hash, salt, updatedAt: new Date().toISOString() };
-    await persist('settings', 'security', data);
-    State.security = data; State.unlocked = true; State.modal = null;
-    toast('Password set — editing unlocked'); render();
-  });
-
-  document.getElementById('submitChangePassword')?.addEventListener('click', async ()=>{
-    const cur = document.getElementById('curPw').value || '';
-    const p1 = document.getElementById('cNewPw1').value || '', p2 = document.getElementById('cNewPw2').value || '';
-    const curHash = await hashPassword(cur, State.security.salt);
-    if(curHash !== State.security.hash){ toast('Current password is incorrect'); return; }
-    if(p1.length < 4){ toast('New password must be at least 4 characters'); return; }
-    if(p1 !== p2){ toast('New passwords do not match'); return; }
-    const salt = randomHex(16);
-    const hash = await hashPassword(p1, salt);
-    const data = { hash, salt, updatedAt: new Date().toISOString() };
-    await persist('settings', 'security', data);
-    State.security = data; State.modal = null;
-    toast('Password updated'); render();
+  document.getElementById('forgotPwBtn')?.addEventListener('click', async ()=>{
+    const email = document.getElementById('unlockEmail').value || '';
+    if(!email){ toast('Enter your email above first'); return; }
+    if(!fbAuth){ toast('Unavailable right now — check your connection'); return; }
+    try{ await fbAuth.sendPasswordResetEmail(email); toast('Password reset email sent'); }
+    catch(e){ toast('Could not send reset email — check the address'); }
   });
 
   document.getElementById('settingsUnlockBtn')?.addEventListener('click', ()=> requireUnlock());
   document.getElementById('settingsLockBtn')?.addEventListener('click', lockApp);
-  document.getElementById('changePasswordBtn')?.addEventListener('click', ()=>{
-    if(!requireUnlock()) return;
-    State.modal = { type:'changePassword' }; render();
+  document.getElementById('copyClientLinkBtn')?.addEventListener('click', ()=>{
+    const el = document.getElementById('clientLinkInput');
+    if(!el) return;
+    el.select();
+    navigator.clipboard?.writeText(el.value).then(()=> toast('Client link copied')).catch(()=> toast('Copy failed — select and copy manually'));
   });
 
   document.getElementById('modalConfirmDelete')?.addEventListener('click', async ()=>{
@@ -1657,6 +1668,9 @@ function attachHandlers(){
   document.querySelectorAll('[data-export-register]').forEach(el=>{
     el.addEventListener('click', ()=> exportRegisterExcel(el.getAttribute('data-export-register')));
   });
+  document.querySelectorAll('[data-export-register-pdf]').forEach(el=>{
+    el.addEventListener('click', ()=> exportRegisterPDF(el.getAttribute('data-export-register-pdf')));
+  });
 
   // discipline module: tabs / filters / search / clear / export
   document.querySelectorAll('[data-module-tab]').forEach(el=>{
@@ -1691,6 +1705,9 @@ function attachHandlers(){
   });
   document.querySelectorAll('[data-export-module]').forEach(el=>{
     el.addEventListener('click', ()=> exportModuleExcel(el.getAttribute('data-export-module')));
+  });
+  document.querySelectorAll('[data-export-module-pdf]').forEach(el=>{
+    el.addEventListener('click', ()=> exportModulePDF(el.getAttribute('data-export-module-pdf')));
   });
 
   // bulk excel import: mapping modal
@@ -2018,6 +2035,17 @@ function exportRegisterExcel(title){
   XLSX.utils.book_append_sheet(wb, ws, title.slice(0,31));
   const out = XLSX.write(wb, {type:'array', bookType:'xlsx'});
   downloadBlob(new Blob([out],{type:'application/octet-stream'}), title.replace(/\s+/g,'_')+'.xlsx');
+}
+
+function exportRegisterPDF(title){
+  let docs;
+  const map = {'RFI Register':'RFI','Submittal Register':'Material Submittal','Invoice Register':'Invoice'};
+  if(title==='All Documents' || title==='Document Register') docs = projDocs();
+  else if(title==='Procurement Register') docs = projDocs().filter(d=>['Purchase Order','LPO','Quotation'].includes(d.type));
+  else docs = projDocs().filter(d=>d.type===map[title]);
+  if(!docs || !docs.length){ toast('Nothing to export yet'); return; }
+  const rows = docs.map(d=>({Number:d.number,Type:d.type,Subject:d.subject,Date:fmtDate(d.date),Status:d.status,'Related Drawing':d.relatedDrawing,'Submitted By':d.submittedBy,'Due Date':d.dueDate?fmtDate(d.dueDate):'',Revision:d.revision||''}));
+  exportRowsToPDF(rows, title);
 }
 
 async function exportProjectBackup(){
