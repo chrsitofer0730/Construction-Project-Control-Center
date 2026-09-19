@@ -577,9 +577,11 @@ function pageHead(title, sub, actions){
 
 function renderRoute(){
   if(!activeProject() && State.route!=='projects') {
-    return pageHead('No project selected','Create your first project to get started.') +
-      `<div class="empty"><h3>Nothing here yet</h3><p>Create a project to start tracking documents, registers and tasks.</p>
-      <button class="btn primary" id="createFirstProject" style="margin-top:12px;">+ New Project</button></div>`;
+    return pageHead('No project selected', State.clientMode ? 'No project has been added yet.' : 'Create your first project to get started.') +
+      (State.clientMode
+        ? `<div class="empty"><h3>Nothing here yet</h3><p>Check back once a project has been set up.</p></div>`
+        : `<div class="empty"><h3>Nothing here yet</h3><p>Create a project to start tracking documents, registers and tasks.</p>
+      <button class="btn primary" id="createFirstProject" style="margin-top:12px;">+ New Project</button></div>`);
   }
   switch(State.route){
     case 'dashboard': return renderDashboard();
@@ -621,7 +623,7 @@ function renderDashboard(){
   const s = computeStats(disc);
   const recentAct = projActivity().slice(0,6);
   return pageHead(proj.name, `${proj.number || ''} ${proj.status?('· '+proj.status):''}${proj.id===DEMO_ID?'<span class="demo-flag">DEMO PROJECT</span>':''}`,
-    `<button class="btn primary" data-route="upload">+ Upload Document</button>`) +
+    State.clientMode ? '' : `<button class="btn primary" data-route="upload">+ Upload Document</button>`) +
   `<div class="field" style="max-width:220px;margin-bottom:14px;"><label>Discipline</label>
     <select id="dashDisciplineFilter">
       <option value="ALL" ${disc==='ALL'?'selected':''}>ALL</option>
@@ -655,7 +657,7 @@ function renderDashboard(){
 
 function renderProjects(){
   return pageHead('Projects', 'Each project keeps its own documents, registers, tasks and activity — nothing crosses over between them.',
-    `<button class="btn primary" id="newProjectBtn">+ New Project</button>`) +
+    State.clientMode ? '' : `<button class="btn primary" id="newProjectBtn">+ New Project</button>`) +
   `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr));">
     ${State.projects.map(p=>`
       <div class="card">
@@ -667,7 +669,7 @@ function renderProjects(){
         <div class="muted">${esc(p.location||'')}</div>
         <div class="btn-row" style="margin-top:12px;">
           <button class="btn" data-open-project="${p.id}">Open</button>
-          <button class="btn ghost" data-edit-project="${p.id}">Edit</button>
+          ${State.clientMode ? '' : `<button class="btn ghost" data-edit-project="${p.id}">Edit</button>`}
         </div>
       </div>
     `).join('')}
@@ -996,7 +998,7 @@ function exportModulePDF(moduleKey){
 function renderTasks(){
   const tasks = projTasks().sort((a,b)=> new Date(a.dueDate||'2999-01-01') - new Date(b.dueDate||'2999-01-01'));
   return pageHead('Tasks', 'Tasks the system suggested from documents, plus anything you add yourself.',
-    `<button class="btn primary" id="newTaskBtn">+ New Task</button>`) +
+    State.clientMode ? '' : `<button class="btn primary" id="newTaskBtn">+ New Task</button>`) +
   (tasks.length ? `<div class="card overflow-x"><table><thead><tr><th>Task</th><th>Responsible</th><th>Due</th><th>Source</th><th>Status</th><th></th></tr></thead><tbody>
     ${tasks.map(t=>{
       const dleft = daysUntil(t.dueDate);
