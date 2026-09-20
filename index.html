@@ -275,6 +275,9 @@ const State = {
   // Client view: permanently read-only, no edit/upload/settings UI. Set once at
   // load time from ?client=1 in the URL — this is the link you hand to clients.
   clientMode: new URLSearchParams(window.location.search).get('client') === '1',
+  // When set alongside clientMode, scopes the whole view to one project only —
+  // that client never sees your other projects exist. From ?project=<id>.
+  clientProjectId: new URLSearchParams(window.location.search).get('project') || null,
 };
 
 const DEMO_ID = 'demo-project';
@@ -331,6 +334,20 @@ async function loadAll(){
       State.tasks = (t||[]).map(x=>x.data ? {...x.data,id:x.id} : x);
       State.activity = (a||[]).map(x=>x.data ? {...x.data,id:x.id} : x);
     }catch(e){ console.warn('db load failed, falling back to demo-only view', e); }
+  }
+  if(State.clientMode && State.clientProjectId){
+    // Scoped client link: this client only ever sees their one project — the
+    // rest of your projects are filtered out before anything else runs, so
+    // there is nothing in State for them to discover even by inspecting data.
+    const pid = State.clientProjectId;
+    State.projects = State.projects.filter(p => p.id === pid);
+    State.documents = State.documents.filter(d => d.projectId === pid);
+    State.tasks = State.tasks.filter(t => t.projectId === pid);
+    State.activity = State.activity.filter(a => a.projectId === pid);
+    State.activeProjectId = State.projects[0]?.id || null;
+    State.loading = false;
+    render();
+    return;
   }
   if(!State.clientMode && State.projects.filter(p=>p.id!==DEMO_ID).length===0 && State.projects.length===0){
     buildDemoData();
@@ -543,8 +560,11 @@ function renderSidebar(){
   ];
   if(State.clientMode){
     // Client view: no upload, no AI assistant, no email drafting, no settings —
-    // just the registers, search, and export/download.
-    nav = nav.map(g=>({...g, items: g.items.filter(([r])=> !['upload','assistant','email','settings'].includes(r))}))
+    // just the registers, search, and export/download. A project-scoped link
+    // also drops the Projects list, since there's only ever the one project.
+    const drop = ['upload','assistant','email','settings'];
+    if(State.clientProjectId) drop.push('projects');
+    nav = nav.map(g=>({...g, items: g.items.filter(([r])=> !drop.includes(r))}))
              .filter(g=>g.items.length);
   }
   return `
@@ -558,9 +578,11 @@ function renderSidebar(){
       <button class="btn ghost lock-btn" id="${State.unlocked?'lockBtn':'unlockBtn'}">${State.unlocked?'Lock':'Unlock'}</button>
     </div>`}
     <div class="proj-picker">
-      <select id="projectSelect">
+      ${State.clientProjectId
+        ? `<div style="color:#F2EFEA;font-weight:600;font-size:12.5px;padding:2px 0;">${esc(proj ? proj.name : 'Project')}</div>`
+        : `<select id="projectSelect">
         ${State.projects.map(p=>`<option value="${p.id}" ${p.id===State.activeProjectId?'selected':''}>${esc(p.name)}${p.id===DEMO_ID?' (Demo)':''}</option>`).join('')}
-      </select>
+      </select>`}
     </div>
     ${nav.map(g=>`
       <div class="nav-group">
@@ -669,7 +691,7 @@ function renderProjects(){
         <div class="muted">${esc(p.location||'')}</div>
         <div class="btn-row" style="margin-top:12px;">
           <button class="btn" data-open-project="${p.id}">Open</button>
-          ${State.clientMode ? '' : `<button class="btn ghost" data-edit-project="${p.id}">Edit</button>`}
+          ${State.clientMode ? '' : `<button class="btn ghost" data-edit-project="${p.id}">Edit</button><button class="btn ghost" data-client-link="${p.id}">Client Link</button>`}
         </div>
       </div>
     `).join('')}
@@ -1140,8 +1162,9 @@ function renderSettings(){
   <div class="section-title">Client-only link</div>
   <div class="card">
     <h3>Share a read-only, download-only view</h3>
-    <p class="muted">Anyone who opens this link sees the current project data with no edit, upload or settings controls at all — only tables and Download Excel / Download PDF buttons.</p>
-    <div class="field"><label>Client link</label><input type="text" readonly value="${esc(clientUrl)}" id="clientLinkInput" onclick="this.select()"></div>
+    <p class="muted">Anyone who opens this link sees no edit, upload or settings controls at all — only tables and Download Excel / Download PDF buttons.</p>
+    <p class="security-note" style="margin-top:0;">This link below can switch between <b>all</b> your projects — use it only if a client is meant to see everything. For a client who should only ever see their own project, go to <b>Projects</b> and click <b>Client Link</b> on their specific project card instead — that link locks to just that one project and never reveals the others exist.</p>
+    <div class="field"><label>All-projects client link</label><input type="text" readonly value="${esc(clientUrl)}" id="clientLinkInput" onclick="this.select()"></div>
     <button class="btn" id="copyClientLinkBtn">Copy Link</button>
   </div>`) +
   `<div class="section-title">About this build</div>
@@ -1494,6 +1517,15 @@ function attachHandlers(){
   document.getElementById('newProjectBtn')?.addEventListener('click', ()=>{ if(!requireUnlock()) return; State.modal={type:'projectForm'}; render(); });
   document.querySelectorAll('[data-edit-project]').forEach(el=>{
     el.addEventListener('click', ()=>{ if(!requireUnlock()) return; const p = State.projects.find(x=>x.id===el.getAttribute('data-edit-project')); State.modal={type:'projectForm',project:p}; render(); });
+  });
+  document.querySelectorAll('[data-client-link]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const pid = el.getAttribute('data-client-link');
+      const url = window.location.origin + window.location.pathname + '?client=1&project=' + encodeURIComponent(pid);
+      navigator.clipboard?.writeText(url).then(()=> toast('Client link copied for this project')).catch(()=> {
+        prompt('Copy this client link:', url);
+      });
+    });
   });
   document.querySelectorAll('[data-open-project]').forEach(el=>{
     el.addEventListener('click', ()=>{ State.activeProjectId = el.getAttribute('data-open-project'); State.route='dashboard'; render(); });
